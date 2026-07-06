@@ -20,7 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from fastapi import FastAPI, Query  # noqa: E402
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
-from fastapi.responses import JSONResponse  # noqa: E402
+from fastapi.responses import HTMLResponse, JSONResponse  # noqa: E402
 
 from investment_agents.config import settings  # noqa: E402
 from investment_agents.data import get_asset  # noqa: E402
@@ -37,6 +37,20 @@ app.add_middleware(
 )
 
 _committee = Committee()
+
+
+@app.get("/", response_class=HTMLResponse)
+def home() -> HTMLResponse:
+    """Serve the frontend for local development.
+
+    On Vercel this route is never reached because ``vercel.json`` routes all
+    non-``/api`` paths to the static ``index.html`` directly.
+    """
+    index_path = Path(__file__).resolve().parent.parent / "index.html"
+    try:
+        return HTMLResponse(index_path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return HTMLResponse("<h1>index.html not found</h1>", status_code=404)
 
 
 @app.get("/api/health")

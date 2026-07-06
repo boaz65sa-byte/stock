@@ -18,7 +18,13 @@
     }
     .wrap { max-width: 900px; margin: 0 auto; }
     h1 { text-align: center; margin: 0 0 4px; font-size: 30px; }
-    .sub { text-align: center; color: var(--muted); margin-bottom: 24px; font-size: 14px; }
+    .sub { text-align: center; color: var(--muted); margin-bottom: 20px; font-size: 14px; }
+    .tabs { display: flex; gap: 8px; justify-content: center; margin-bottom: 18px; }
+    .tab {
+      background: var(--card2); border: 1px solid #334155; color: var(--text);
+      border-radius: 999px; padding: 10px 20px; cursor: pointer; font-size: 15px; transition: .15s;
+    }
+    .tab.active { background: var(--accent); color: #05243a; font-weight: 700; border-color: var(--accent); }
     .card {
       background: var(--card); border-radius: 16px; padding: 20px;
       margin-bottom: 18px; box-shadow: 0 8px 24px rgba(0,0,0,.25);
@@ -27,10 +33,10 @@
     .pops { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
     .pop {
       background: var(--card2); border: 1px solid #334155; color: var(--text);
-      border-radius: 10px; padding: 8px 12px; cursor: pointer; font-size: 14px;
-      transition: .15s;
+      border-radius: 10px; padding: 8px 12px; cursor: pointer; font-size: 14px; transition: .15s;
     }
     .pop:hover { border-color: var(--accent); transform: translateY(-1px); }
+    .pop.on { background: var(--accent); color: #05243a; border-color: var(--accent); font-weight: 700; }
     .row { display: flex; gap: 10px; }
     input[type=text] {
       flex: 1; background: #0b1220; border: 1px solid #334155; color: var(--text);
@@ -58,6 +64,18 @@
     .hint { color: var(--muted); font-size: 12px; text-align: center; margin-top: 18px; }
     .err { color: #fca5a5; text-align: center; padding: 10px; }
     .spinner { text-align:center; color: var(--muted); padding: 20px; }
+    .best { text-align: center; padding: 6px 0 14px; }
+    .best .k { color: var(--muted); font-size: 14px; }
+    .best .v { font-size: 26px; font-weight: 800; margin-top: 2px; }
+    .rank-row { display: flex; align-items: center; gap: 12px; padding: 10px 4px; border-bottom: 1px solid #2b3a52; }
+    .rank-row:last-child { border-bottom: none; }
+    .rank-row .num { color: var(--muted); width: 22px; text-align: center; }
+    .rank-row .tk { width: 90px; font-weight: 700; }
+    .rank-row .bar-wrap { flex: 1; background: #0b1220; border-radius: 6px; height: 22px; position: relative; overflow: hidden; }
+    .rank-row .bar { position: absolute; top: 0; bottom: 0; }
+    .rank-row .vd { width: 130px; font-size: 13px; color: var(--muted); text-align: left; }
+    .rank-row .sc { width: 56px; text-align: left; font-variant-numeric: tabular-nums; font-weight: 700; }
+    .hidden { display: none; }
   </style>
 </head>
 <body>
@@ -65,22 +83,49 @@
     <h1>📈 מערכת סוכני השקעות</h1>
     <div class="sub">בודקת את השוק ומסבירה בפשטות אם כדאי להשקיע · למחקר ולמידה בלבד, אינו ייעוץ השקעות</div>
 
-    <div class="card">
-      <div class="label">בחר נכס פופולרי, או הקלד סימבול משלך:</div>
-      <div class="pops" id="pops"></div>
-      <div class="row">
-        <input type="text" id="ticker" placeholder="לדוגמה: AAPL, BTC-USD, TEVA.TA" value="AAPL" />
-        <select id="period">
-          <option value="6mo">6 חודשים</option>
-          <option value="1y" selected>שנה</option>
-          <option value="2y">שנתיים</option>
-          <option value="5y">5 שנים</option>
-        </select>
-        <button class="go" id="go">🔍 בדוק עכשיו</button>
-      </div>
+    <div class="tabs">
+      <button class="tab active" id="tab-analyze" onclick="switchTab('analyze')">🔍 בדיקת נכס</button>
+      <button class="tab" id="tab-rank" onclick="switchTab('rank')">🏆 השוואת נכסים</button>
     </div>
 
-    <div id="result"></div>
+    <!-- ============ ANALYZE VIEW ============ -->
+    <div id="view-analyze">
+      <div class="card">
+        <div class="label">בחר נכס פופולרי, או הקלד סימבול משלך:</div>
+        <div class="pops" id="pops"></div>
+        <div class="row">
+          <input type="text" id="ticker" placeholder="לדוגמה: AAPL, BTC-USD, TEVA.TA" value="AAPL" />
+          <select id="period">
+            <option value="6mo">6 חודשים</option>
+            <option value="1y" selected>שנה</option>
+            <option value="2y">שנתיים</option>
+            <option value="5y">5 שנים</option>
+          </select>
+          <button class="go" id="go">🔍 בדוק עכשיו</button>
+        </div>
+      </div>
+      <div id="result"></div>
+    </div>
+
+    <!-- ============ RANK VIEW ============ -->
+    <div id="view-rank" class="hidden">
+      <div class="card">
+        <div class="label">בחר כמה נכסים להשוואה (לחיצה מוסיפה/מסירה), או הקלד רשימה:</div>
+        <div class="pops" id="rank-pops"></div>
+        <div class="row">
+          <input type="text" id="rank-tickers" placeholder="AAPL, MSFT, NVDA, SPY, BTC-USD" />
+          <select id="rank-period">
+            <option value="6mo">6 חודשים</option>
+            <option value="1y" selected>שנה</option>
+            <option value="2y">שנתיים</option>
+            <option value="5y">5 שנים</option>
+          </select>
+          <button class="go" id="rank-go">🏆 השווה ודרג</button>
+        </div>
+        <div class="label" style="margin:8px 0 0">עד 8 נכסים בכל השוואה.</div>
+      </div>
+      <div id="rank-result"></div>
+    </div>
 
     <div class="hint">מבוסס על ועדת סוכנים: ניתוח טכני, מומנטום, ערך פונדמנטלי וניהול סיכונים.</div>
   </div>
@@ -93,6 +138,16 @@
       ["💊 טבע", "TEVA.TA"],
     ];
 
+    // ---------- tab switching ----------
+    function switchTab(name) {
+      const isAnalyze = name === "analyze";
+      document.getElementById("view-analyze").classList.toggle("hidden", !isAnalyze);
+      document.getElementById("view-rank").classList.toggle("hidden", isAnalyze);
+      document.getElementById("tab-analyze").classList.toggle("active", isAnalyze);
+      document.getElementById("tab-rank").classList.toggle("active", !isAnalyze);
+    }
+
+    // ---------- ANALYZE ----------
     const popsEl = document.getElementById("pops");
     POPULAR.forEach(([label, tk]) => {
       const b = document.createElement("button");
@@ -104,9 +159,7 @@
     const resultEl = document.getElementById("result");
     const goBtn = document.getElementById("go");
     goBtn.onclick = analyze;
-    document.getElementById("ticker").addEventListener("keydown", e => {
-      if (e.key === "Enter") analyze();
-    });
+    document.getElementById("ticker").addEventListener("keydown", e => { if (e.key === "Enter") analyze(); });
 
     async function analyze() {
       const ticker = document.getElementById("ticker").value.trim();
@@ -117,11 +170,10 @@
       try {
         const r = await fetch(`/api/analyze?ticker=${encodeURIComponent(ticker)}&period=${period}`);
         if (!r.ok) {
-          const e = await r.json().catch(() => ({}));
           resultEl.innerHTML = '<div class="card err">לא נמצאו מספיק נתונים לנכס הזה. בדוק את הסימבול ונסה שוב.</div>';
           return;
         }
-        render(await r.json());
+        renderAnalyze(await r.json());
       } catch (err) {
         resultEl.innerHTML = '<div class="card err">שגיאת רשת. נסה שוב.</div>';
       } finally {
@@ -129,7 +181,7 @@
       }
     }
 
-    function render(d) {
+    function renderAnalyze(d) {
       resultEl.innerHTML = `
         <div class="card">
           <div class="grid">
@@ -160,6 +212,108 @@
       drawChart(d.history, d.color, d.ticker);
     }
 
+    // ---------- RANK ----------
+    const rankSelected = new Set(["AAPL", "MSFT", "NVDA", "SPY", "BTC-USD"]);
+    const rankPopsEl = document.getElementById("rank-pops");
+    const rankInput = document.getElementById("rank-tickers");
+
+    function syncRankInput() { rankInput.value = [...rankSelected].join(", "); }
+    function refreshRankPops() {
+      [...rankPopsEl.children].forEach(b => b.classList.toggle("on", rankSelected.has(b.dataset.tk)));
+    }
+    POPULAR.forEach(([label, tk]) => {
+      const b = document.createElement("button");
+      b.className = "pop"; b.textContent = label; b.dataset.tk = tk;
+      b.onclick = () => {
+        if (rankSelected.has(tk)) rankSelected.delete(tk);
+        else if (rankSelected.size < 8) rankSelected.add(tk);
+        syncRankInput(); refreshRankPops();
+      };
+      rankPopsEl.appendChild(b);
+    });
+    syncRankInput(); refreshRankPops();
+
+    const rankGoBtn = document.getElementById("rank-go");
+    rankGoBtn.onclick = rank;
+    rankInput.addEventListener("keydown", e => { if (e.key === "Enter") rank(); });
+
+    async function rank() {
+      const tickers = rankInput.value.trim();
+      const period = document.getElementById("rank-period").value;
+      if (!tickers) return;
+      rankGoBtn.disabled = true;
+      document.getElementById("rank-result").innerHTML = '<div class="card spinner">⏳ משווה את הנכסים...</div>';
+      try {
+        const r = await fetch(`/api/rank?tickers=${encodeURIComponent(tickers)}&period=${period}`);
+        if (!r.ok) {
+          document.getElementById("rank-result").innerHTML = '<div class="card err">לא הצלחתי לדרג. בדוק את הרשימה ונסה שוב.</div>';
+          return;
+        }
+        renderRank((await r.json()).results);
+      } catch (err) {
+        document.getElementById("rank-result").innerHTML = '<div class="card err">שגיאת רשת. נסה שוב.</div>';
+      } finally {
+        rankGoBtn.disabled = false;
+      }
+    }
+
+    function renderRank(results) {
+      const el = document.getElementById("rank-result");
+      if (!results || !results.length) {
+        el.innerHTML = '<div class="card err">לא התקבלו תוצאות.</div>';
+        return;
+      }
+      const best = results[0];
+      const maxAbs = Math.max(100, ...results.map(r => Math.abs(r.score_pct)));
+      el.innerHTML = `
+        <div class="card">
+          <div class="best">
+            <div class="k">הכי כדאי כרגע</div>
+            <div class="v" style="color:${best.color}">${best.emoji} ${best.ticker} — ${best.verdict}</div>
+          </div>
+          ${results.map((r, i) => {
+            const half = 50; // center at 50%
+            const w = (Math.abs(r.score_pct) / maxAbs) * half;
+            const pos = r.score_pct >= 0
+              ? `right:${half}%;width:${w}%`
+              : `right:${half - w}%;width:${w}%`;
+            return `
+            <div class="rank-row">
+              <div class="num">${i + 1}</div>
+              <div class="tk">${r.ticker}</div>
+              <div class="bar-wrap">
+                <div class="bar" style="${pos};background:${r.color}"></div>
+              </div>
+              <div class="vd">${r.emoji} ${r.verdict}</div>
+              <div class="sc" style="color:${r.color}">${signPct(r.score_pct / 100)}</div>
+            </div>`;
+          }).join("")}
+        </div>
+        <div class="card">
+          <div class="label">ציון לכל נכס</div>
+          <div id="rank-chart"></div>
+        </div>`;
+      drawRankChart(results);
+    }
+
+    function drawRankChart(results) {
+      Plotly.newPlot("rank-chart", [{
+        x: results.map(r => r.ticker),
+        y: results.map(r => r.score_pct),
+        type: "bar",
+        marker: { color: results.map(r => r.color) },
+        text: results.map(r => signPct(r.score_pct / 100)),
+        textposition: "outside",
+      }], {
+        height: 320, margin: { t: 20, b: 40, l: 45, r: 10 },
+        paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)",
+        xaxis: { color: "#94a3b8", gridcolor: "#273449" },
+        yaxis: { title: "ציון %", color: "#94a3b8", gridcolor: "#273449", range: [-100, 100] },
+        font: { color: "#e2e8f0" },
+      }, { displayModeBar: false, responsive: true });
+    }
+
+    // ---------- shared ----------
     function fmt(x) { return x == null ? "N/A" : Number(x).toLocaleString(undefined, {maximumFractionDigits: 2}); }
     function signPct(s) { const v = Math.round(s * 100); return (v >= 0 ? "+" : "") + v + "%"; }
 
@@ -197,6 +351,7 @@
       }, { displayModeBar: false, responsive: true });
     }
 
+    // initial load
     analyze();
   </script>
 </body>
