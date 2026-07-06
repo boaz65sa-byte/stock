@@ -86,6 +86,170 @@ def action_plan(rec: Recommendation) -> dict:
     }
 
 
+# ---------------------------------------------------------------------------
+# Profile-driven ("smart") portfolio builder
+# ---------------------------------------------------------------------------
+
+# Candidate assets grouped by class.
+UNIVERSE_CLASSES: dict[str, list[str]] = {
+    "broad": ["SPY", "QQQ"],                       # broad market ETFs
+    "growth": ["AAPL", "MSFT", "NVDA", "GOOGL", "AMZN"],  # large-cap growth
+    "diversifier": ["GC=F"],                        # gold
+    "crypto": ["BTC-USD", "ETH-USD"],               # crypto
+}
+
+# Base split across classes for the invested portion, by goal.
+GOAL_CLASS_ALLOC: dict[str, dict[str, float]] = {
+    "growth":   {"broad": 0.30, "growth": 0.55, "diversifier": 0.05, "crypto": 0.10},
+    "balanced": {"broad": 0.45, "growth": 0.30, "diversifier": 0.15, "crypto": 0.10},
+    "preserve": {"broad": 0.60, "growth": 0.15, "diversifier": 0.25, "crypto": 0.00},
+}
+
+CASH_BY_HORIZON = {"short": 0.40, "medium": 0.15, "long": 0.05}
+RISK_CASH_ADJ = {"low": 0.15, "medium": 0.0, "high": -0.05}
+ASSET_CAP = {"low": 0.15, "medium": 0.25, "high": 0.35}
+CRYPTO_CAP = {"low": 0.0, "medium": 0.10, "high": 0.25}
+
+HORIZON_HE = {"short": "טווח קצר (עד שנתיים)", "medium": "טווח בינוני (2-5 שנים)", "long": "טווח ארוך (5+ שנים)"}
+GOAL_HE = {"growth": "צמיחה", "balanced": "מאוזן", "preserve": "שימור הון"}
+RISK_WORD_HE = {"low": "נמוך", "medium": "בינוני", "high": "גבוה"}
+
+
+def _clamp(x: float, lo: float, hi: float) -> float:
+    return max(lo, min(hi, x))
+
+
+def advisor_universe(goal: str, risk: str, include_crypto: bool) -> tuple[list[str], dict, dict]:
+    """Return (tickers, class_of_ticker, base_weight_of_ticker) for a profile."""
+    goal = goal if goal in GOAL_CLASS_ALLOC else "balanced"
+    alloc = dict(GOAL_CLASS_ALLOC[goal])
+    if not include_crypto or risk == "low":
+        c = alloc.get("crypto", 0.0)
+        alloc["crypto"] = 0.0
+        alloc["broad"] += c * 0.6
+        alloc["diversifier"] += c * 0.4
+
+    tickers: list[str] = []
+    class_of: dict[str, str] = {}
+    base_of: dict[str, float] = {}
+    for cls, share in alloc.items():
+        if share <= 0:
+            continue
+        members = UNIVERSE_CLASSES[cls]
+        per = share / len(members)
+        for t in members:
+            tickers.append(t)
+            class_of[t] = cls
+            base_of[t] = per
+    return tickers, class_of, base_of
+
+
+def build_advisor(profile: dict, recs: Iterable[Recommendation], amount: float) -> dict:
+    """Build a personalized portfolio from a profile + committee scores.
+
+    profile keys: horizon (short/medium/long), risk (low/medium/high),
+    goal (growth/balanced/preserve), include_crypto (bool).
+    """
+    horizon = profile.get("horizon", "medium")
+    risk = profile.get("risk", "medium")
+    goal = profile.get("goal", "balanced")
+    include_crypto = bool(profile.get("include_crypto", False))
+
+    cash_frac = _clamp(CASH_BY_HORIZON.get(horizon, 0.15) + RISK_CASH_ADJ.get(risk, 0.0), 0.0, 0.7)
+    invested_frac = 1.0 - cash_frac
+
+    _, class_of, base_of = advisor_universe(goal, risk, include_crypto)
+
+    # Adjust base weights by the committee's current view.
+    adj: dict[str, float] = {}
+    rec_by_ticker: dict[str, Recommendation] = {}
+    for r in recs:
+        rec_by_ticker[r.ticker] = r
+        base = base_of.get(r.ticker, 0.0)
+        if base <= 0:
+            continue
+        if r.score <= -0.5:
+            factor = 0.0  # avoid strong-sell assets entirely
+        else:
+            factor = max(0.2, min(2.0, 1.0 + r.score)) * max(0.3, r.confidence)
+        adj[r.ticker] = base * factor
+
+    total = sum(adj.values())
+    reasoning = _advisor_reasoning(horizon, risk, goal, include_crypto, cash_frac)
+
+    if total <= 0 or amount <= 0:
+        return {
+            "amount": amount, "invested": 0.0, "cash": round(max(amount, 0.0), 2),
+            "allocations": [], "reasoning": reasoning,
+            "note": "לפי הפרופיל והניתוח הנוכחי עדיף להחזיק מזומן ולהמתין.",
+        }
+
+    # Normalize to the invested fraction, then apply caps (excess -> cash).
+    target = {t: adj[t] / total * invested_frac for t in adj}
+    asset_cap = ASSET_CAP.get(risk, 0.25)
+    for t in list(target):
+        target[t] = min(target[t], asset_cap)
+
+    crypto_ts = [t for t in target if class_of.get(t) == "crypto"]
+    csum = sum(target[t] for t in crypto_ts)
+    crypto_cap = CRYPTO_CAP.get(risk, 0.1)
+    if csum > crypto_cap and csum > 0:
+        scale = crypto_cap / csum
+        for t in crypto_ts:
+            target[t] *= scale
+
+    allocations = []
+    invested = 0.0
+    for t, frac in target.items():
+        amt = round(amount * frac, 2)
+        if amt <= 0:
+            continue
+        invested += amt
+        r = rec_by_ticker[t]
+        allocations.append(
+            {
+                "ticker": t, "weight_pct": round(frac * 100, 1), "amount": amt,
+                "score_pct": r.score_pct, "action": r.action.value, "price": r.price,
+                "cls": class_of.get(t, ""),
+            }
+        )
+    allocations.sort(key=lambda a: a["amount"], reverse=True)
+    cash = round(amount - invested, 2)
+
+    return {
+        "amount": amount, "invested": round(invested, 2), "cash": cash,
+        "allocations": allocations, "reasoning": reasoning,
+        "note": "החלוקה נבנתה מהפרופיל שלך יחד עם הציונים העדכניים של הסוכנים. חומר חינוכי בלבד.",
+    }
+
+
+def _advisor_reasoning(horizon, risk, goal, include_crypto, cash_frac) -> list[str]:
+    out = [
+        f"מטרה: {GOAL_HE.get(goal, goal)} · {HORIZON_HE.get(horizon, horizon)} · סיכון {RISK_WORD_HE.get(risk, risk)}.",
+        f"רכיב מזומן מתוכנן: כ-{round(cash_frac * 100)}% "
+        + ("(טווח קצר — שומרים יותר נזילות)." if horizon == "short"
+           else "(טווח ארוך — כמעט הכל מושקע)." if horizon == "long" else "."),
+    ]
+    if goal == "growth":
+        out.append("הטיה למניות צמיחה ולמדד הנאסד\"ק להאצת תשואה פוטנציאלית.")
+    elif goal == "preserve":
+        out.append("דגש על מדדים רחבים וזהב לשמירה על יציבות.")
+    else:
+        out.append("איזון בין מדדים רחבים, מניות צמיחה וזהב.")
+    if risk == "low":
+        out.append("סיכון נמוך: הגבלנו כל נכס ל-15% ולא כללנו קריפטו.")
+    elif risk == "high":
+        out.append("סיכון גבוה: אפשרנו חשיפה גדולה יותר לנכס בודד וקריפטו עד 25%.")
+    else:
+        out.append("סיכון בינוני: תקרה של 25% לנכס וקריפטו עד 10%.")
+    if include_crypto and risk != "low":
+        out.append("כללת קריפטו בתיק (מוגבל לפי רמת הסיכון).")
+    elif include_crypto and risk == "low":
+        out.append("ביקשת קריפטו, אך ברמת סיכון נמוכה השמטנו אותו מטעמי בטיחות.")
+    out.append("הנכסים החלשים לפי הניתוח קיבלו משקל נמוך יותר (או הושמטו).")
+    return out
+
+
 def suggest_allocation(recs: Iterable[Recommendation], amount: float) -> dict:
     """Split ``amount`` across assets, weighted by their positive score.
 

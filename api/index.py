@@ -22,7 +22,12 @@ from fastapi import FastAPI, Query  # noqa: E402
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 from fastapi.responses import HTMLResponse, JSONResponse  # noqa: E402
 
-from investment_agents.advice import action_plan, suggest_allocation  # noqa: E402
+from investment_agents.advice import (  # noqa: E402
+    action_plan,
+    advisor_universe,
+    build_advisor,
+    suggest_allocation,
+)
 from investment_agents.config import settings  # noqa: E402
 from investment_agents.data import get_asset  # noqa: E402
 from investment_agents.explain import explain_recommendation  # noqa: E402
@@ -189,6 +194,33 @@ def portfolio(
     alloc["skipped"] = skipped
     alloc["amount"] = amount
     return JSONResponse(content=alloc)
+
+
+@app.get("/api/advisor")
+def advisor(
+    amount: float = Query(10000.0, gt=0),
+    horizon: str = Query("medium"),
+    risk: str = Query("medium"),
+    goal: str = Query("balanced"),
+    crypto: bool = Query(False),
+    period: str = Query("1y"),
+) -> JSONResponse:
+    settings.history_period = period
+    profile = {"horizon": horizon, "risk": risk, "goal": goal, "include_crypto": crypto}
+
+    tickers, _, _ = advisor_universe(goal, risk, crypto)
+    recs = _committee.rank(tickers)
+    result = build_advisor(profile, recs, amount)
+
+    by_ticker = {r.ticker: r for r in recs}
+    for a in result["allocations"]:
+        info = explain_recommendation(by_ticker[a["ticker"]])
+        a["verdict"] = info["verdict"]
+        a["emoji"] = info["emoji"]
+        a["color"] = info["color"]
+
+    result["profile"] = profile
+    return JSONResponse(content=result)
 
 
 @app.get("/api/backtest")

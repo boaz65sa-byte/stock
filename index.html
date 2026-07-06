@@ -83,6 +83,14 @@
     .rank-row .vd { width: 130px; font-size: 13px; color: var(--muted); text-align: left; }
     .rank-row .sc { width: 56px; text-align: left; font-variant-numeric: tabular-nums; font-weight: 700; }
     .hidden { display: none; }
+    .q { margin-bottom: 16px; }
+    .opts { display: flex; flex-wrap: wrap; gap: 8px; }
+    .opt {
+      background: var(--card2); border: 1px solid #334155; color: var(--text);
+      border-radius: 10px; padding: 10px 16px; cursor: pointer; font-size: 15px; transition: .15s;
+    }
+    .opt:hover { border-color: var(--accent); }
+    .opt.on { background: var(--accent); color: #05243a; font-weight: 700; border-color: var(--accent); }
   </style>
 </head>
 <body>
@@ -95,6 +103,7 @@
       <button class="tab" id="tab-rank" onclick="switchTab('rank')">🏆 השוואת נכסים</button>
       <button class="tab" id="tab-backtest" onclick="switchTab('backtest')">⏳ בקטסט</button>
       <button class="tab" id="tab-portfolio" onclick="switchTab('portfolio')">💼 בניית תיק</button>
+      <button class="tab" id="tab-advisor" onclick="switchTab('advisor')">🧭 תיק חכם</button>
       <button class="tab" id="tab-howto" onclick="switchTab('howto')">📚 איך להשקיע</button>
     </div>
 
@@ -185,6 +194,57 @@
       <div id="pf-result"></div>
     </div>
 
+    <!-- ============ SMART ADVISOR VIEW ============ -->
+    <div id="view-advisor" class="hidden">
+      <div class="card">
+        <div style="font-size:20px;font-weight:800;margin-bottom:2px">🧭 בנה לי תיק לפי מה שמתאים לי</div>
+        <div class="meta" style="color:var(--muted);margin-bottom:12px">ענה על כמה שאלות, והמערכת תבנה תיק מותאם אישית לפי הפרופיל שלך + ניתוח הסוכנים.</div>
+
+        <div class="q">
+          <div class="label">💰 כמה כסף להשקיע?</div>
+          <input type="number" id="ad-amount" value="10000" min="100" step="100" style="width:180px;background:#0b1220;border:1px solid #334155;color:var(--text);border-radius:10px;padding:11px 12px;font-size:16px" />
+        </div>
+
+        <div class="q">
+          <div class="label">⏳ לכמה זמן ההשקעה?</div>
+          <div class="opts" id="ad-horizon" data-val="long">
+            <button class="opt" data-v="short">עד שנתיים</button>
+            <button class="opt" data-v="medium">2-5 שנים</button>
+            <button class="opt on" data-v="long">5+ שנים</button>
+          </div>
+        </div>
+
+        <div class="q">
+          <div class="label">🎢 איזו רמת סיכון מתאימה לך?</div>
+          <div class="opts" id="ad-risk" data-val="medium">
+            <button class="opt" data-v="low">נמוך (שמרן)</button>
+            <button class="opt on" data-v="medium">בינוני</button>
+            <button class="opt" data-v="high">גבוה (אגרסיבי)</button>
+          </div>
+        </div>
+
+        <div class="q">
+          <div class="label">🎯 מה המטרה העיקרית?</div>
+          <div class="opts" id="ad-goal" data-val="balanced">
+            <button class="opt" data-v="growth">צמיחה מקסימלית</button>
+            <button class="opt on" data-v="balanced">מאוזן</button>
+            <button class="opt" data-v="preserve">שימור הון</button>
+          </div>
+        </div>
+
+        <div class="q">
+          <div class="label">₿ לכלול קריפטו?</div>
+          <div class="opts" id="ad-crypto" data-val="no">
+            <button class="opt on" data-v="no">לא</button>
+            <button class="opt" data-v="yes">כן</button>
+          </div>
+        </div>
+
+        <button class="go" id="ad-go" style="margin-top:6px;width:100%">🧭 בנה לי תיק</button>
+      </div>
+      <div id="ad-result"></div>
+    </div>
+
     <!-- ============ HOW TO INVEST VIEW ============ -->
     <div id="view-howto" class="hidden">
       <div class="card">
@@ -251,7 +311,7 @@
 
     // ---------- tab switching ----------
     function switchTab(name) {
-      ["analyze", "rank", "backtest", "portfolio", "howto"].forEach(v => {
+      ["analyze", "rank", "backtest", "portfolio", "advisor", "howto"].forEach(v => {
         document.getElementById("view-" + v).classList.toggle("hidden", v !== name);
         document.getElementById("tab-" + v).classList.toggle("active", v === name);
       });
@@ -681,6 +741,89 @@
       const values = allocs.map(a => a.amount).concat([d.cash]);
       const colors = allocs.map(a => a.color).concat(["#64748b"]);
       Plotly.newPlot("pf-chart", [{
+        type: "pie", labels, values, marker: { colors },
+        textinfo: "label+percent", hole: 0.45,
+      }], {
+        height: 340, margin: { t: 10, b: 10, l: 10, r: 10 },
+        paper_bgcolor: "rgba(0,0,0,0)", font: { color: "#e2e8f0" }, showlegend: false,
+      }, { displayModeBar: false, responsive: true });
+    }
+
+    // ---------- SMART ADVISOR ----------
+    // wire option-group buttons (single choice)
+    document.querySelectorAll("#view-advisor .opts").forEach(group => {
+      group.querySelectorAll(".opt").forEach(btn => {
+        btn.onclick = () => {
+          group.querySelectorAll(".opt").forEach(b => b.classList.remove("on"));
+          btn.classList.add("on");
+          group.dataset.val = btn.dataset.v;
+        };
+      });
+    });
+
+    const adGoBtn = document.getElementById("ad-go");
+    adGoBtn.onclick = buildAdvisor;
+
+    async function buildAdvisor() {
+      const amount = parseFloat(document.getElementById("ad-amount").value);
+      const horizon = document.getElementById("ad-horizon").dataset.val;
+      const risk = document.getElementById("ad-risk").dataset.val;
+      const goal = document.getElementById("ad-goal").dataset.val;
+      const crypto = document.getElementById("ad-crypto").dataset.val === "yes";
+      const el = document.getElementById("ad-result");
+      if (!(amount > 0)) { el.innerHTML = '<div class="card err">הזן סכום תקין.</div>'; return; }
+      adGoBtn.disabled = true;
+      el.innerHTML = '<div class="card spinner">⏳ בונה תיק מותאם אישית...</div>';
+      try {
+        const url = `/api/advisor?amount=${amount}&horizon=${horizon}&risk=${risk}&goal=${goal}&crypto=${crypto}`;
+        const r = await fetch(url);
+        const d = await r.json();
+        if (!r.ok) { el.innerHTML = '<div class="card err">שגיאה בבניית התיק.</div>'; return; }
+        renderAdvisor(d);
+      } catch (err) {
+        el.innerHTML = '<div class="card err">שגיאת רשת. נסה שוב.</div>';
+      } finally {
+        adGoBtn.disabled = false;
+      }
+    }
+
+    function renderAdvisor(d) {
+      const el = document.getElementById("ad-result");
+      const allocs = d.allocations || [];
+      const rows = allocs.map(a => `
+        <div class="rank-row">
+          <div class="tk">${a.emoji} ${a.ticker}</div>
+          <div class="bar-wrap"><div class="bar" style="right:0;width:${Math.min(100, a.weight_pct)}%;background:${a.color}"></div></div>
+          <div class="vd">${a.verdict}</div>
+          <div class="sc">${a.weight_pct}%</div>
+          <div class="sc" style="color:${a.color}">$${fmt(a.amount)}</div>
+        </div>`).join("");
+
+      el.innerHTML = `
+        <div class="card">
+          <div class="label">🧭 למה התיק הזה? (ההיגיון מאחורי ההחלטה)</div>
+          ${d.reasoning.map(x => `<div class="sig"><div class="e">•</div><div class="name">${x}</div></div>`).join("")}
+        </div>
+        <div class="card">
+          <div class="label">💼 חלוקת התיק המומלצת — $${fmt(d.amount)}</div>
+          <div id="ad-chart"></div>
+        </div>
+        <div class="card">
+          ${allocs.length ? rows : '<div class="err">לפי הפרופיל עדיף להחזיק מזומן כרגע.</div>'}
+          <div class="rank-row" style="border-top:2px solid #334155">
+            <div class="tk">💵 מזומן</div>
+            <div class="bar-wrap"><div class="bar" style="right:0;width:${Math.min(100, d.amount>0?d.cash/d.amount*100:0)}%;background:#64748b"></div></div>
+            <div class="vd">נזילות / בצד</div>
+            <div class="sc"></div>
+            <div class="sc">$${fmt(d.cash)}</div>
+          </div>
+          <div class="summary" style="margin-top:10px">📝 ${d.note}</div>
+        </div>`;
+
+      const labels = allocs.map(a => a.ticker).concat(["מזומן"]);
+      const values = allocs.map(a => a.amount).concat([d.cash]);
+      const colors = allocs.map(a => a.color).concat(["#64748b"]);
+      Plotly.newPlot("ad-chart", [{
         type: "pie", labels, values, marker: { colors },
         textinfo: "label+percent", hole: 0.45,
       }], {
