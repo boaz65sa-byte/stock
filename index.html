@@ -113,6 +113,16 @@
     .mini { background: #1e293b; border: 1px solid #334155; color: #e2e8f0; border-radius: 6px; padding: 4px 12px; cursor: pointer; font-size: 13px; }
     .mini:hover { background: #273449; }
     .mini.del { border-color: #7f1d1d; color: #fca5a5; }
+    .cmp-check { display: flex; align-items: center; }
+    .cmp-check input { width: 18px; height: 18px; accent-color: #22c55e; cursor: pointer; }
+    .due { display: inline-block; background: #78350f; color: #fcd34d; font-size: 11px; padding: 2px 8px; border-radius: 10px; margin-inline-start: 6px; }
+    .review { display: inline-block; color: #64748b; font-size: 11px; margin-inline-start: 6px; }
+    table.cmp { width: 100%; border-collapse: collapse; font-size: 13px; }
+    table.cmp th, table.cmp td { padding: 7px 6px; text-align: center; border-bottom: 1px solid #2b3a52; }
+    table.cmp th { color: #94a3b8; font-weight: 700; }
+    table.cmp td.cmp-name { text-align: right; }
+    table.cmp td:first-child { text-align: right; }
+    table.cmp tr.cmp-cash td { color: #94a3b8; border-top: 2px solid #334155; }
     .opts { display: flex; flex-wrap: wrap; gap: 8px; }
     .opt {
       background: var(--card2); border: 1px solid #334155; color: var(--text);
@@ -946,13 +956,27 @@
       URL.revokeObjectURL(url);
     }
 
+    const REVIEW_DAYS = 30;
+    const DAY_MS = 86400000;
+    const GOAL_HE = { growth: "צמיחה", balanced: "מאוזן", preserve: "שימור הון" };
+    const compareSel = new Set();
+
+    function setOpt(groupId, val) {
+      const group = document.getElementById(groupId);
+      if (!group) return;
+      group.dataset.val = val;
+      group.querySelectorAll(".opt").forEach(b => b.classList.toggle("on", b.dataset.v === val));
+    }
+
     function savePlan() {
       if (!lastPlan) return;
       const list = getSaved();
       const p = lastPlan.profile || {};
+      const now = Date.now();
       list.unshift({
-        id: Date.now(),
+        id: now,
         date: new Date().toLocaleDateString("he-IL"),
+        reviewOn: now + REVIEW_DAYS * DAY_MS,
         amount: lastPlan.amount,
         profile: p,
         data: lastPlan,
@@ -963,10 +987,60 @@
       if (btn) { btn.textContent = "✅ נשמר!"; setTimeout(() => { btn.textContent = "⭐ שמור את התיק"; }, 1500); }
     }
 
-    function deleteSaved(id) { setSaved(getSaved().filter(x => x.id !== id)); renderSaved(); }
+    function deleteSaved(id) { compareSel.delete(id); setSaved(getSaved().filter(x => x.id !== id)); renderSaved(); }
     function loadSaved(id) {
       const item = getSaved().find(x => x.id === id);
       if (item) { renderAdvisor(item.data); document.getElementById("ad-result").scrollIntoView({ behavior: "smooth" }); }
+    }
+
+    // Re-check: reload the saved profile into the form and rebuild with fresh data.
+    function recheckSaved(id) {
+      const item = getSaved().find(x => x.id === id);
+      if (!item) return;
+      const p = item.profile || {};
+      document.getElementById("ad-amount").value = item.amount;
+      setOpt("ad-horizon", p.horizon || "medium");
+      setOpt("ad-risk", p.risk || "medium");
+      setOpt("ad-goal", p.goal || "balanced");
+      setOpt("ad-crypto", p.include_crypto ? "yes" : "no");
+      document.getElementById("ad-go").scrollIntoView({ behavior: "smooth" });
+      buildAdvisor();
+    }
+
+    function toggleCompare(id) {
+      if (compareSel.has(id)) compareSel.delete(id);
+      else { if (compareSel.size >= 2) { const first = compareSel.values().next().value; compareSel.delete(first); } compareSel.add(id); }
+      renderSaved();
+    }
+
+    function renderCompare() {
+      if (compareSel.size !== 2) return "";
+      const list = getSaved();
+      const [a, b] = [...compareSel].map(id => list.find(x => x.id === id)).filter(Boolean);
+      if (!a || !b) return "";
+      const map = d => Object.fromEntries((d.data.allocations || []).map(x => [x.ticker, x]));
+      const ma = map(a), mb = map(b);
+      const tickers = [...new Set([...Object.keys(ma), ...Object.keys(mb)])];
+      const nameOf = t => (ma[t] || mb[t]).name_he;
+      const rows = tickers.map(t => {
+        const wa = ma[t] ? ma[t].weight_pct : 0, wb = mb[t] ? mb[t].weight_pct : 0;
+        const diff = Math.round((wb - wa) * 10) / 10;
+        const dc = diff > 0 ? "#22c55e" : diff < 0 ? "#f87171" : "#64748b";
+        return `<tr><td class="cmp-name">${nameOf(t)} <span class="tick">${t}</span></td>
+          <td>${wa}%</td><td>${wb}%</td><td style="color:${dc}">${diff > 0 ? "+" : ""}${diff}%</td></tr>`;
+      }).join("");
+      const hdr = x => `${GOAL_HE[x.profile.goal] || ""} · $${fmt(x.amount)} · ${x.date}`;
+      return `
+        <div class="card">
+          <div class="label">🔀 השוואת שני תיקים</div>
+          <table class="cmp">
+            <thead><tr><th>נכס</th><th>א׳</th><th>ב׳</th><th>הפרש</th></tr></thead>
+            <tbody>${rows}
+              <tr class="cmp-cash"><td>💵 מזומן</td><td>${Math.round(a.data.cash/a.data.amount*100)}%</td><td>${Math.round(b.data.cash/b.data.amount*100)}%</td><td></td></tr>
+            </tbody>
+          </table>
+          <div class="summary" style="margin-top:8px">א׳: ${hdr(a)}<br>ב׳: ${hdr(b)}</div>
+        </div>`;
     }
 
     function renderSaved() {
@@ -974,18 +1048,29 @@
       if (!el) return;
       const list = getSaved();
       if (!list.length) { el.innerHTML = ""; return; }
-      const goalHe = { growth: "צמיחה", balanced: "מאוזן", preserve: "שימור הון" };
-      const rows = list.map(x => `
+      const now = Date.now();
+      const rows = list.map(x => {
+        const due = x.reviewOn && now >= x.reviewOn;
+        const daysLeft = x.reviewOn ? Math.ceil((x.reviewOn - now) / DAY_MS) : null;
+        const badge = due
+          ? `<span class="due">🔔 מומלץ לבדוק מחדש</span>`
+          : (daysLeft != null ? `<span class="review">בדיקה חוזרת בעוד ${daysLeft} ימים</span>` : "");
+        const checked = compareSel.has(x.id) ? "checked" : "";
+        return `
         <div class="saved-row">
+          <label class="cmp-check"><input type="checkbox" ${checked} onchange="toggleCompare(${x.id})"></label>
           <div class="saved-info">
-            <b>$${fmt(x.amount)}</b> · ${goalHe[x.profile.goal] || x.profile.goal || ""} · ${x.date}
+            <b>$${fmt(x.amount)}</b> · ${GOAL_HE[x.profile.goal] || x.profile.goal || ""} · ${x.date} ${badge}
           </div>
           <div class="saved-btns">
             <button class="mini" onclick="loadSaved(${x.id})">פתח</button>
+            <button class="mini" onclick="recheckSaved(${x.id})">🔄 בדוק מחדש</button>
             <button class="mini del" onclick="deleteSaved(${x.id})">מחק</button>
           </div>
-        </div>`).join("");
-      el.innerHTML = `<div class="card"><div class="label">⭐ התיקים השמורים שלי</div>${rows}</div>`;
+        </div>`;
+      }).join("");
+      const hint = compareSel.size < 2 ? '<div class="summary" style="margin-top:8px;font-size:12px">✔️ סמן שני תיקים כדי להשוות ביניהם.</div>' : "";
+      el.innerHTML = `<div class="card"><div class="label">⭐ התיקים השמורים שלי</div>${rows}${hint}</div>${renderCompare()}`;
     }
 
     // ---------- shared ----------
