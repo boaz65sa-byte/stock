@@ -1,0 +1,6 @@
+# Extra dependencies for the LOCAL Streamlit dashboard and the colored CLI.
+# Not installed on Vercel (the web version uses the FastAPI API + index.html).
+-r requirements.txt
+streamlit>=1.36.0
+plotly>=5.22.0
+rich>=13.7.0

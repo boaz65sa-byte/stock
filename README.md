@@ -22,20 +22,52 @@
   - `AI Analyst` (אופציונלי) — נדלק אוטומטית אם מוגדר `OPENAI_API_KEY`.
 - **מסחר וירטואלי (Paper trading)** — תיק דמה שמבצע קניות/מכירות לפי ההמלצות.
 - **בקטסטינג** — סימולציה היסטורית של אסטרטגיית חציית ממוצעים נעים.
-- **שני ממשקים:** שורת פקודה (CLI) ודשבורד ווב יפה (Streamlit).
+- **שלושה ממשקים:** אתר ווב (FastAPI + HTML, מתאים לפריסה ב‑Vercel), שורת פקודה (CLI), ודשבורד מקומי (Streamlit).
 
 ---
 
-## התקנה
+## התקנה (מקומי)
 
 ```bash
 python -m venv .venv
-.venv\Scripts\activate        # Windows (PowerShell)
+.venv\Scripts\activate            # Windows (PowerShell)
+
+# בשביל האתר (FastAPI) + הליבה בלבד:
 pip install -r requirements.txt
+
+# בשביל הדשבורד המקומי (Streamlit) וה‑CLI הצבעוני:
+pip install -r requirements-dashboard.txt
 ```
 
 (אופציונלי) להפעלת סוכן ה‑AI: העתק את `.env.example` ל‑`.env` והכנס `OPENAI_API_KEY`.
 בלי זה — המערכת עובדת במלואה עם הסוכנים האלגוריתמיים.
+
+---
+
+## אתר ווב (FastAPI) — הרצה מקומית ופריסה ל‑Vercel
+
+הרצה מקומית של האתר:
+
+```bash
+uvicorn api.index:app --reload
+# ואז פותחים בדפדפן:  http://127.0.0.1:8000  (העמוד ב-index.html)
+```
+
+**פריסה ל‑Vercel:**
+
+1. היכנס ל‑[vercel.com](https://vercel.com) והתחבר עם חשבון GitHub.
+2. לחץ **Add New → Project** ובחר את המאגר `stock`.
+3. השאר את כל ההגדרות כברירת מחדל (ה‑`vercel.json` כבר מגדיר הכול) ולחץ **Deploy**.
+4. תוך דקה תקבל כתובת ציבורית לאתר. 🎉
+
+> חשוב: הדשבורד של **Streamlit לא רץ על Vercel** (הוא דורש שרת רציף). לכן
+> גרסת הווב ל‑Vercel בנויה מ‑API של FastAPI (`api/index.py`) + עמוד סטטי
+> (`index.html`). את Streamlit מריצים מקומית או ב‑Streamlit Community Cloud.
+
+נקודות קצה של ה‑API:
+- `GET /api/analyze?ticker=AAPL&period=1y`
+- `GET /api/rank?tickers=AAPL,MSFT,BTC-USD`
+- `GET /api/health`
 
 ---
 
@@ -58,7 +90,7 @@ python -m investment_agents.cli backtest AAPL --fast 20 --slow 50
 python -m investment_agents.cli paper AAPL MSFT --budget 1000
 ```
 
-## שימוש — דשבורד ווב
+## שימוש — דשבורד מקומי (Streamlit)
 
 ```bash
 streamlit run app.py
@@ -102,11 +134,17 @@ investment_agents/
   orchestrator.py   # הוועדה שמאחדת את דעות הסוכנים
   portfolio.py      # תיק מסחר וירטואלי + בקטסטר
   cli.py            # ממשק שורת פקודה
+  explain.py        # הסברים בעברית פשוטה (verdict + נימוקים)
   agents/           # הסוכנים
     base.py
     technical.py  momentum.py  value.py  risk.py  llm_analyst.py
-app.py              # דשבורד Streamlit
-requirements.txt
+api/
+  index.py          # API של FastAPI (serverless, ל-Vercel)
+index.html          # חזית הווב (עברית RTL, מד ויזואלי)
+vercel.json         # הגדרות פריסה ל-Vercel
+app.py              # דשבורד Streamlit (מקומי)
+requirements.txt              # ליבה + API (מותקן ב-Vercel)
+requirements-dashboard.txt    # תוספות ל-Streamlit/CLI מקומי
 .env.example
 ```
 

@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>📈 מערכת סוכני השקעות</title>
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js" charset="utf-8"></script>
+  <style>
+    :root {
+      --bg: #0f172a; --card: #1e293b; --card2: #273449;
+      --text: #e2e8f0; --muted: #94a3b8; --accent: #38bdf8;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; font-family: "Segoe UI", Arial, sans-serif;
+      background: linear-gradient(160deg, #0f172a, #1e293b);
+      color: var(--text); min-height: 100vh; padding: 24px 16px;
+    }
+    .wrap { max-width: 900px; margin: 0 auto; }
+    h1 { text-align: center; margin: 0 0 4px; font-size: 30px; }
+    .sub { text-align: center; color: var(--muted); margin-bottom: 24px; font-size: 14px; }
+    .card {
+      background: var(--card); border-radius: 16px; padding: 20px;
+      margin-bottom: 18px; box-shadow: 0 8px 24px rgba(0,0,0,.25);
+    }
+    .label { color: var(--muted); font-size: 14px; margin-bottom: 10px; }
+    .pops { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+    .pop {
+      background: var(--card2); border: 1px solid #334155; color: var(--text);
+      border-radius: 10px; padding: 8px 12px; cursor: pointer; font-size: 14px;
+      transition: .15s;
+    }
+    .pop:hover { border-color: var(--accent); transform: translateY(-1px); }
+    .row { display: flex; gap: 10px; }
+    input[type=text] {
+      flex: 1; background: #0b1220; border: 1px solid #334155; color: var(--text);
+      border-radius: 10px; padding: 12px 14px; font-size: 16px;
+    }
+    select { background:#0b1220;border:1px solid #334155;color:var(--text);border-radius:10px;padding:0 10px; }
+    button.go {
+      background: var(--accent); color: #05243a; border: none; border-radius: 10px;
+      padding: 12px 22px; font-size: 16px; font-weight: 700; cursor: pointer;
+    }
+    button.go:disabled { opacity:.5; cursor: default; }
+    .verdict { text-align: center; }
+    .verdict .emoji { font-size: 64px; }
+    .verdict .title { font-size: 34px; font-weight: 800; }
+    .verdict .st { color: var(--muted); font-size: 16px; margin-top: 4px; }
+    .verdict .meta { color: var(--muted); font-size: 14px; margin-top: 6px; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: center; }
+    @media (max-width: 640px) { .grid { grid-template-columns: 1fr; } }
+    .summary { background: #0b1220; border-radius: 10px; padding: 12px 14px; margin-top: 6px; }
+    .sig { display: flex; align-items: center; gap: 10px; padding: 8px 4px; border-bottom: 1px solid #2b3a52; }
+    .sig:last-child { border-bottom: none; }
+    .sig .e { font-size: 20px; }
+    .sig .name { flex: 1; }
+    .sig .pct { color: var(--muted); font-variant-numeric: tabular-nums; }
+    .hint { color: var(--muted); font-size: 12px; text-align: center; margin-top: 18px; }
+    .err { color: #fca5a5; text-align: center; padding: 10px; }
+    .spinner { text-align:center; color: var(--muted); padding: 20px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>📈 מערכת סוכני השקעות</h1>
+    <div class="sub">בודקת את השוק ומסבירה בפשטות אם כדאי להשקיע · למחקר ולמידה בלבד, אינו ייעוץ השקעות</div>
+
+    <div class="card">
+      <div class="label">בחר נכס פופולרי, או הקלד סימבול משלך:</div>
+      <div class="pops" id="pops"></div>
+      <div class="row">
+        <input type="text" id="ticker" placeholder="לדוגמה: AAPL, BTC-USD, TEVA.TA" value="AAPL" />
+        <select id="period">
+          <option value="6mo">6 חודשים</option>
+          <option value="1y" selected>שנה</option>
+          <option value="2y">שנתיים</option>
+          <option value="5y">5 שנים</option>
+        </select>
+        <button class="go" id="go">🔍 בדוק עכשיו</button>
+      </div>
+    </div>
+
+    <div id="result"></div>
+
+    <div class="hint">מבוסס על ועדת סוכנים: ניתוח טכני, מומנטום, ערך פונדמנטלי וניהול סיכונים.</div>
+  </div>
+
+  <script>
+    const POPULAR = [
+      ["🍎 אפל", "AAPL"], ["🪟 מיקרוסופט", "MSFT"], ["🎮 אנבידיה", "NVDA"],
+      ["🚗 טסלה", "TSLA"], ["📦 אמזון", "AMZN"], ["🔎 גוגל", "GOOGL"],
+      ["₿ ביטקוין", "BTC-USD"], ["Ξ אתריום", "ETH-USD"], ["📊 S&P 500", "SPY"],
+      ["💊 טבע", "TEVA.TA"],
+    ];
+
+    const popsEl = document.getElementById("pops");
+    POPULAR.forEach(([label, tk]) => {
+      const b = document.createElement("button");
+      b.className = "pop"; b.textContent = label;
+      b.onclick = () => { document.getElementById("ticker").value = tk; analyze(); };
+      popsEl.appendChild(b);
+    });
+
+    const resultEl = document.getElementById("result");
+    const goBtn = document.getElementById("go");
+    goBtn.onclick = analyze;
+    document.getElementById("ticker").addEventListener("keydown", e => {
+      if (e.key === "Enter") analyze();
+    });
+
+    async function analyze() {
+      const ticker = document.getElementById("ticker").value.trim();
+      const period = document.getElementById("period").value;
+      if (!ticker) return;
+      goBtn.disabled = true;
+      resultEl.innerHTML = '<div class="card spinner">⏳ הסוכנים בודקים את ' + ticker + '...</div>';
+      try {
+        const r = await fetch(`/api/analyze?ticker=${encodeURIComponent(ticker)}&period=${period}`);
+        if (!r.ok) {
+          const e = await r.json().catch(() => ({}));
+          resultEl.innerHTML = '<div class="card err">לא נמצאו מספיק נתונים לנכס הזה. בדוק את הסימבול ונסה שוב.</div>';
+          return;
+        }
+        render(await r.json());
+      } catch (err) {
+        resultEl.innerHTML = '<div class="card err">שגיאת רשת. נסה שוב.</div>';
+      } finally {
+        goBtn.disabled = false;
+      }
+    }
+
+    function render(d) {
+      resultEl.innerHTML = `
+        <div class="card">
+          <div class="grid">
+            <div id="gauge"></div>
+            <div class="verdict">
+              <div class="emoji">${d.emoji}</div>
+              <div class="title" style="color:${d.color}">${d.verdict}</div>
+              <div class="st">${d.subtitle}</div>
+              <div class="meta">${d.confidence_word} · מחיר נוכחי: ${fmt(d.price)}</div>
+            </div>
+          </div>
+          <div class="summary">📝 ${d.summary}</div>
+        </div>
+        <div class="card">
+          <div class="label">למה? (בשפה פשוטה)</div>
+          ${d.signals.map(s => `
+            <div class="sig">
+              <div class="e">${s.emoji}</div>
+              <div class="name">${s.role} — ${s.mood}</div>
+              <div class="pct">${signPct(s.score)}</div>
+            </div>`).join("")}
+        </div>
+        <div class="card">
+          <div class="label">מחיר בתקופה האחרונה</div>
+          <div id="chart"></div>
+        </div>`;
+      drawGauge(d.score_pct, d.color);
+      drawChart(d.history, d.color, d.ticker);
+    }
+
+    function fmt(x) { return x == null ? "N/A" : Number(x).toLocaleString(undefined, {maximumFractionDigits: 2}); }
+    function signPct(s) { const v = Math.round(s * 100); return (v >= 0 ? "+" : "") + v + "%"; }
+
+    function drawGauge(scorePct, color) {
+      Plotly.newPlot("gauge", [{
+        type: "indicator", mode: "gauge+number", value: scorePct,
+        number: { suffix: "%", font: { size: 40, color: "#e2e8f0" } },
+        gauge: {
+          axis: { range: [-100, 100], tickcolor: "#94a3b8", tickfont: { color: "#94a3b8" } },
+          bar: { color: color, thickness: 0.3 },
+          bgcolor: "rgba(0,0,0,0)",
+          steps: [
+            { range: [-100, -15], color: "rgba(192,57,43,.35)" },
+            { range: [-15, 15], color: "rgba(241,196,15,.30)" },
+            { range: [15, 100], color: "rgba(46,204,113,.30)" },
+          ],
+          threshold: { line: { color: "white", width: 4 }, thickness: 0.75, value: scorePct },
+        },
+      }], {
+        height: 240, margin: { t: 20, b: 10, l: 20, r: 20 },
+        paper_bgcolor: "rgba(0,0,0,0)", font: { color: "#e2e8f0" },
+      }, { displayModeBar: false, responsive: true });
+    }
+
+    function drawChart(history, color, ticker) {
+      Plotly.newPlot("chart", [{
+        x: history.dates, y: history.prices, type: "scatter", mode: "lines",
+        line: { color: color, width: 2 }, name: ticker,
+      }], {
+        height: 280, margin: { t: 10, b: 30, l: 45, r: 10 },
+        paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)",
+        xaxis: { color: "#94a3b8", gridcolor: "#273449" },
+        yaxis: { color: "#94a3b8", gridcolor: "#273449" },
+        font: { color: "#e2e8f0" },
+      }, { displayModeBar: false, responsive: true });
+    }
+
+    analyze();
+  </script>
+</body>
+</html>
