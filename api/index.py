@@ -22,6 +22,7 @@ from fastapi import FastAPI, Query  # noqa: E402
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 from fastapi.responses import HTMLResponse, JSONResponse  # noqa: E402
 
+from investment_agents.advice import action_plan  # noqa: E402
 from investment_agents.config import settings  # noqa: E402
 from investment_agents.data import get_asset  # noqa: E402
 from investment_agents.explain import explain_recommendation  # noqa: E402
@@ -104,6 +105,7 @@ def analyze(ticker: str = Query(..., min_length=1), period: str = Query("1y")) -
             "confidence_word": info["confidence_word"],
             "summary": info["summary"],
             "signals": info["signal_lines"],
+            "action_plan": action_plan(rec),
             "history": {
                 "dates": [d.strftime("%Y-%m-%d") for d in hist.index],
                 "prices": [round(float(p), 2) for p in hist.values],

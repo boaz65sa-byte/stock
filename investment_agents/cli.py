@@ -24,6 +24,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
+from .advice import action_plan
 from .config import Action, Recommendation, settings
 from .explain import explain_recommendation
 from .orchestrator import Committee
@@ -96,6 +97,12 @@ def cmd_simple(args: argparse.Namespace) -> None:
         )
         for line in info["signal_lines"]:
             body += f"{line['emoji']} {line['role']} — {line['mood']}\n"
+
+        plan = action_plan(rec)
+        body += f"\n[bold]🎯 מה לעשות: {plan['headline']}[/bold]  ([dim]{plan['risk_level']}[/dim])\n"
+        for step in plan["steps"]:
+            body += f"  ➤ {step}\n"
+
         console.print(Panel(body.rstrip(), title=ticker, border_style=info["color"]))
 
 

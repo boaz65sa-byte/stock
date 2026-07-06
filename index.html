@@ -87,6 +87,7 @@
       <button class="tab active" id="tab-analyze" onclick="switchTab('analyze')">🔍 בדיקת נכס</button>
       <button class="tab" id="tab-rank" onclick="switchTab('rank')">🏆 השוואת נכסים</button>
       <button class="tab" id="tab-backtest" onclick="switchTab('backtest')">⏳ בקטסט</button>
+      <button class="tab" id="tab-howto" onclick="switchTab('howto')">📚 איך להשקיע</button>
     </div>
 
     <!-- ============ ANALYZE VIEW ============ -->
@@ -149,6 +150,47 @@
       <div id="bt-result"></div>
     </div>
 
+    <!-- ============ HOW TO INVEST VIEW ============ -->
+    <div id="view-howto" class="hidden">
+      <div class="card">
+        <div style="font-size:22px;font-weight:800;margin-bottom:6px">📚 איך מתחילים להשקיע — מדריך קצר</div>
+        <div class="meta" style="color:var(--muted)">צעד-אחר-צעד למתחילים. חומר חינוכי כללי, לא ייעוץ אישי.</div>
+      </div>
+
+      <div class="card">
+        <div class="label">שלב 1 — לפני הכל: בסיס פיננסי</div>
+        <div class="sig"><div class="e">1️⃣</div><div class="name">שמור <b>קרן חירום</b> של 3-6 חודשי הוצאות בצד (לא להשקעה).</div></div>
+        <div class="sig"><div class="e">2️⃣</div><div class="name">סלק חובות יקרים (כמו אשראי) לפני שמשקיעים.</div></div>
+        <div class="sig"><div class="e">3️⃣</div><div class="name">השקע רק כסף שלא תצטרך ב-3-5 השנים הקרובות.</div></div>
+      </div>
+
+      <div class="card">
+        <div class="label">שלב 2 — פותחים חשבון</div>
+        <div class="sig"><div class="e">🏦</div><div class="name">פתח חשבון מסחר דרך <b>הבנק</b> או דרך <b>בית השקעות / ברוקר</b> (לרוב עמלות נמוכות יותר).</div></div>
+        <div class="sig"><div class="e">🌍</div><div class="name">לשוק האמריקאי יש ברוקרים בינלאומיים; לשוק הישראלי — דרך הבנק/בית השקעות מקומי.</div></div>
+        <div class="sig"><div class="e">🧾</div><div class="name">שים לב לעמלות: קנייה/מכירה, דמי ניהול, והמרת מט"ח.</div></div>
+      </div>
+
+      <div class="card">
+        <div class="label">שלב 3 — עקרונות זהב</div>
+        <div class="sig"><div class="e">📆</div><div class="name"><b>השקעה הדרגתית (DCA):</b> סכום קבוע כל חודש — מנטרל תזמון שגוי.</div></div>
+        <div class="sig"><div class="e">🧺</div><div class="name"><b>פיזור:</b> אל תשים הכל בנכס אחד. מדדים רחבים (כמו S&P 500) מפזרים אוטומטית.</div></div>
+        <div class="sig"><div class="e">⏳</div><div class="name"><b>טווח ארוך:</b> הזמן בשוק חשוב יותר מתזמון השוק. חשוב על שנים, לא ימים.</div></div>
+        <div class="sig"><div class="e">😌</div><div class="name"><b>שלוט ברגשות:</b> אל תמכור בפאניקה בירידות ואל תקנה מתוך חמדנות בעליות.</div></div>
+        <div class="sig"><div class="e">🛡️</div><div class="name"><b>ניהול סיכון:</b> הגדר מראש כמה אתה מוכן להפסיד בכל השקעה.</div></div>
+      </div>
+
+      <div class="card">
+        <div class="label">שלב 4 — איך המערכת הזו עוזרת</div>
+        <div class="sig"><div class="e">🔍</div><div class="name">בלשונית <b>בדיקת נכס</b> — קבל ציון, המלצה ו"מה לעשות עכשיו".</div></div>
+        <div class="sig"><div class="e">🏆</div><div class="name">בלשונית <b>השוואת נכסים</b> — ראה איפה הכי כדאי מבין כמה אפשרויות.</div></div>
+        <div class="sig"><div class="e">⏳</div><div class="name">בלשונית <b>בקטסט</b> — בדוק איך אסטרטגיה התנהגה בעבר.</div></div>
+        <div class="summary" style="margin-top:8px;color:var(--muted);font-size:13px">
+          זכור: אף כלי לא מנבא את העתיד בוודאות. השתמש במערכת ככלי עזר לקבלת החלטות, לא כתחליף לשיקול דעת או לייעוץ מקצועי.
+        </div>
+      </div>
+    </div>
+
     <div class="hint">מבוסס על ועדת סוכנים: ניתוח טכני, מומנטום, ערך פונדמנטלי וניהול סיכונים.</div>
   </div>
 
@@ -174,7 +216,7 @@
 
     // ---------- tab switching ----------
     function switchTab(name) {
-      ["analyze", "rank", "backtest"].forEach(v => {
+      ["analyze", "rank", "backtest", "howto"].forEach(v => {
         document.getElementById("view-" + v).classList.toggle("hidden", v !== name);
         document.getElementById("tab-" + v).classList.toggle("active", v === name);
       });
@@ -259,6 +301,7 @@
               <div class="pct">${signPct(s.score)}</div>
             </div>`).join("")}
         </div>
+        ${d.action_plan ? planCard(d.action_plan) : ""}
         <div class="card">
           <div class="label">מחיר בתקופה האחרונה</div>
           <div id="chart"></div>
@@ -370,6 +413,19 @@
         yaxis: { title: "ציון %", color: "#94a3b8", gridcolor: "#273449", range: [-100, 100] },
         font: { color: "#e2e8f0" },
       }, { displayModeBar: false, responsive: true });
+    }
+
+    function planCard(p) {
+      return `
+        <div class="card" style="border:1px solid #334155">
+          <div class="label">🎯 מה לעשות עכשיו?</div>
+          <div style="font-size:20px;font-weight:800;margin-bottom:2px">${p.emoji} ${p.headline}</div>
+          <div class="meta" style="color:var(--muted);margin-bottom:10px">רמת סיכון: ${p.risk_level}</div>
+          ${p.steps.map(s => `<div class="sig"><div class="e">➤</div><div class="name">${s}</div></div>`).join("")}
+          <div class="summary" style="margin-top:10px">
+            ${p.reminders.map(r => `<div style="font-size:13px;color:var(--muted)">• ${r}</div>`).join("")}
+          </div>
+        </div>`;
     }
 
     // ---------- BACKTEST ----------
