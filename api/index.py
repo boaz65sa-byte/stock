@@ -26,6 +26,7 @@ from investment_agents.config import settings  # noqa: E402
 from investment_agents.data import get_asset  # noqa: E402
 from investment_agents.explain import explain_recommendation  # noqa: E402
 from investment_agents.orchestrator import Committee  # noqa: E402
+from investment_agents.tickers import resolve  # noqa: E402
 
 app = FastAPI(title="Investment Agents API", version="1.0.0")
 
@@ -60,15 +61,28 @@ def health() -> dict:
 
 @app.get("/api/analyze")
 def analyze(ticker: str = Query(..., min_length=1), period: str = Query("1y")) -> JSONResponse:
-    ticker = ticker.strip().upper()
+    r = resolve(ticker)
+    if r.private_name:
+        return JSONResponse(
+            status_code=200,
+            content={
+                "status": "private",
+                "name": r.private_name,
+                "message": f"{r.private_name} היא חברה פרטית שאינה נסחרת בבורסה, "
+                f"ולכן אין נתוני מסחר לניתוח.",
+            },
+        )
+    if not r.ticker:
+        return JSONResponse(status_code=404, content={"error": "no_data", "ticker": ticker})
+
     settings.history_period = period
     try:
-        asset = get_asset(ticker, period=period)
+        asset = get_asset(r.ticker, period=period)
     except Exception as exc:  # network / bad symbol
         return JSONResponse(status_code=502, content={"error": f"fetch failed: {type(exc).__name__}"})
 
     if not asset.is_valid:
-        return JSONResponse(status_code=404, content={"error": "no_data", "ticker": ticker})
+        return JSONResponse(status_code=404, content={"error": "no_data", "ticker": r.ticker, "query": r.query})
 
     rec = _committee.analyze_asset(asset)
     info = explain_recommendation(rec)
@@ -76,6 +90,8 @@ def analyze(ticker: str = Query(..., min_length=1), period: str = Query("1y")) -
     hist = asset.close.tail(180)
     return JSONResponse(
         content={
+            "status": "ok",
+            "query": r.query,
             "ticker": rec.ticker,
             "price": rec.price,
             "action": rec.action.value,
@@ -98,9 +114,22 @@ def analyze(ticker: str = Query(..., min_length=1), period: str = Query("1y")) -
 @app.get("/api/rank")
 def rank(tickers: str = Query(...), period: str = Query("1y")) -> JSONResponse:
     settings.history_period = period
-    tks = [t.strip().upper() for t in tickers.split(",") if t.strip()][:8]
+    resolved: list[str] = []
+    skipped: list[str] = []
+    for raw in tickers.split(","):
+        raw = raw.strip()
+        if not raw:
+            continue
+        r = resolve(raw)
+        if r.private_name:
+            skipped.append(r.private_name)
+        elif r.ticker:
+            resolved.append(r.ticker)
+    # de-duplicate while preserving order, cap at 8
+    seen: set[str] = set()
+    tks = [t for t in resolved if not (t in seen or seen.add(t))][:8]
     if not tks:
-        return JSONResponse(status_code=400, content={"error": "no_tickers"})
+        return JSONResponse(status_code=400, content={"error": "no_tickers", "skipped": skipped})
 
     recs = _committee.rank(tks)
     out = []
@@ -117,4 +146,4 @@ def rank(tickers: str = Query(...), period: str = Query("1y")) -> JSONResponse:
                 "price": r.price,
             }
         )
-    return JSONResponse(content={"results": out})
+    return JSONResponse(content={"results": out, "skipped": skipped})

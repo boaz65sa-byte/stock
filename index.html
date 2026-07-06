@@ -94,7 +94,7 @@
         <div class="label">בחר נכס פופולרי, או הקלד סימבול משלך:</div>
         <div class="pops" id="pops"></div>
         <div class="row">
-          <input type="text" id="ticker" placeholder="לדוגמה: AAPL, BTC-USD, TEVA.TA" value="AAPL" />
+          <input type="text" id="ticker" list="suggest" placeholder="הקלד בעברית: טסלה, אנבידיה, ביטקוין, זהב..." value="AAPL" />
           <select id="period">
             <option value="6mo">6 חודשים</option>
             <option value="1y" selected>שנה</option>
@@ -113,7 +113,7 @@
         <div class="label">בחר כמה נכסים להשוואה (לחיצה מוסיפה/מסירה), או הקלד רשימה:</div>
         <div class="pops" id="rank-pops"></div>
         <div class="row">
-          <input type="text" id="rank-tickers" placeholder="AAPL, MSFT, NVDA, SPY, BTC-USD" />
+          <input type="text" id="rank-tickers" list="suggest" placeholder="אפשר גם בעברית: אפל, טסלה, נאסד&quot;ק, זהב" />
           <select id="rank-period">
             <option value="6mo">6 חודשים</option>
             <option value="1y" selected>שנה</option>
@@ -130,12 +130,24 @@
     <div class="hint">מבוסס על ועדת סוכנים: ניתוח טכני, מומנטום, ערך פונדמנטלי וניהול סיכונים.</div>
   </div>
 
+  <datalist id="suggest"></datalist>
+
   <script>
     const POPULAR = [
       ["🍎 אפל", "AAPL"], ["🪟 מיקרוסופט", "MSFT"], ["🎮 אנבידיה", "NVDA"],
       ["🚗 טסלה", "TSLA"], ["📦 אמזון", "AMZN"], ["🔎 גוגל", "GOOGL"],
-      ["₿ ביטקוין", "BTC-USD"], ["Ξ אתריום", "ETH-USD"], ["📊 S&P 500", "SPY"],
-      ["💊 טבע", "TEVA.TA"],
+      ["₿ ביטקוין", "BTC-USD"], ["Ξ אתריום", "ETH-USD"],
+      ["📊 S&P 500", "SPY"], ["💻 נאסד\"ק", "QQQ"], ["🏛️ דאו ג'ונס", "DIA"],
+      ["🥇 זהב", "GC=F"], ["🛢️ נפט", "CL=F"], ["💊 טבע", "TEVA.TA"],
+    ];
+
+    // Hebrew names shown as autocomplete suggestions when typing.
+    const SUGGESTIONS = [
+      "אפל", "מיקרוסופט", "אנבידיה", "טסלה", "אמזון", "גוגל", "מטא", "נטפליקס",
+      "אינטל", "פלנטיר", "דיסני", "נייקי", "מקדונלדס", "קוקה קולה",
+      "ביטקוין", "אתריום", "סולנה", "דוג'קוין",
+      "נאסד\"ק", "דאו ג'ונס", "ראסל 2000", "זהב", "כסף", "נפט",
+      "טבע", "בנק הפועלים", "בנק לאומי", "נייס", "אלביט",
     ];
 
     // ---------- tab switching ----------
@@ -146,6 +158,14 @@
       document.getElementById("tab-analyze").classList.toggle("active", isAnalyze);
       document.getElementById("tab-rank").classList.toggle("active", !isAnalyze);
     }
+
+    // ---------- autocomplete suggestions ----------
+    const suggestEl = document.getElementById("suggest");
+    SUGGESTIONS.forEach(name => {
+      const o = document.createElement("option");
+      o.value = name;
+      suggestEl.appendChild(o);
+    });
 
     // ---------- ANALYZE ----------
     const popsEl = document.getElementById("pops");
@@ -169,11 +189,22 @@
       resultEl.innerHTML = '<div class="card spinner">⏳ הסוכנים בודקים את ' + ticker + '...</div>';
       try {
         const r = await fetch(`/api/analyze?ticker=${encodeURIComponent(ticker)}&period=${period}`);
-        if (!r.ok) {
-          resultEl.innerHTML = '<div class="card err">לא נמצאו מספיק נתונים לנכס הזה. בדוק את הסימבול ונסה שוב.</div>';
+        if (r.status === 404) {
+          resultEl.innerHTML = '<div class="card err">לא נמצאו נתונים ל"' + ticker + '". נסה שם אחר או סימבול (למשל AAPL).</div>';
           return;
         }
-        renderAnalyze(await r.json());
+        if (!r.ok) {
+          resultEl.innerHTML = '<div class="card err">שגיאה בקבלת הנתונים. נסה שוב.</div>';
+          return;
+        }
+        const d = await r.json();
+        if (d.status === "private") {
+          resultEl.innerHTML = '<div class="card"><div class="verdict"><div class="emoji">🏢</div>'
+            + '<div class="title" style="color:#f1c40f">' + d.name + '</div>'
+            + '<div class="st">' + d.message + '</div></div></div>';
+          return;
+        }
+        renderAnalyze(d);
       } catch (err) {
         resultEl.innerHTML = '<div class="card err">שגיאת רשת. נסה שוב.</div>';
       } finally {
@@ -182,6 +213,8 @@
     }
 
     function renderAnalyze(d) {
+      const resolvedNote = (d.query && d.query.toUpperCase() !== d.ticker)
+        ? `<div class="meta">חיפשת: ${d.query} → <b>${d.ticker}</b></div>` : "";
       resultEl.innerHTML = `
         <div class="card">
           <div class="grid">
@@ -191,6 +224,7 @@
               <div class="title" style="color:${d.color}">${d.verdict}</div>
               <div class="st">${d.subtitle}</div>
               <div class="meta">${d.confidence_word} · מחיר נוכחי: ${fmt(d.price)}</div>
+              ${resolvedNote}
             </div>
           </div>
           <div class="summary">📝 ${d.summary}</div>
@@ -249,7 +283,8 @@
           document.getElementById("rank-result").innerHTML = '<div class="card err">לא הצלחתי לדרג. בדוק את הרשימה ונסה שוב.</div>';
           return;
         }
-        renderRank((await r.json()).results);
+        const data = await r.json();
+        renderRank(data.results, data.skipped);
       } catch (err) {
         document.getElementById("rank-result").innerHTML = '<div class="card err">שגיאת רשת. נסה שוב.</div>';
       } finally {
@@ -257,12 +292,14 @@
       }
     }
 
-    function renderRank(results) {
+    function renderRank(results, skipped) {
       const el = document.getElementById("rank-result");
       if (!results || !results.length) {
         el.innerHTML = '<div class="card err">לא התקבלו תוצאות.</div>';
         return;
       }
+      const skipNote = (skipped && skipped.length)
+        ? `<div class="summary">ℹ️ דילגתי על חברות פרטיות שאינן נסחרות: ${skipped.join(", ")}</div>` : "";
       const best = results[0];
       const maxAbs = Math.max(100, ...results.map(r => Math.abs(r.score_pct)));
       el.innerHTML = `
@@ -271,6 +308,7 @@
             <div class="k">הכי כדאי כרגע</div>
             <div class="v" style="color:${best.color}">${best.emoji} ${best.ticker} — ${best.verdict}</div>
           </div>
+          ${skipNote}
           ${results.map((r, i) => {
             const half = 50; // center at 50%
             const w = (Math.abs(r.score_pct) / maxAbs) * half;

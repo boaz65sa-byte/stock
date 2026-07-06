@@ -40,7 +40,10 @@ class AssetData:
 
 
 def _normalize_ticker(ticker: str) -> str:
-    return ticker.strip().upper()
+    # Resolve Hebrew/English names (e.g. "טסלה" -> "TSLA") to a Yahoo ticker.
+    from .tickers import to_ticker
+
+    return to_ticker(ticker)
 
 
 @lru_cache(maxsize=256)
