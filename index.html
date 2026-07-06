@@ -86,6 +86,7 @@
     <div class="tabs">
       <button class="tab active" id="tab-analyze" onclick="switchTab('analyze')">🔍 בדיקת נכס</button>
       <button class="tab" id="tab-rank" onclick="switchTab('rank')">🏆 השוואת נכסים</button>
+      <button class="tab" id="tab-backtest" onclick="switchTab('backtest')">⏳ בקטסט</button>
     </div>
 
     <!-- ============ ANALYZE VIEW ============ -->
@@ -127,6 +128,27 @@
       <div id="rank-result"></div>
     </div>
 
+    <!-- ============ BACKTEST VIEW ============ -->
+    <div id="view-backtest" class="hidden">
+      <div class="card">
+        <div class="label">בדוק איך אסטרטגיה פשוטה של חציית ממוצעים נעים הייתה מתפקדת ב-5 השנים האחרונות:</div>
+        <div class="row" style="flex-wrap:wrap;gap:12px">
+          <input type="text" id="bt-ticker" list="suggest" placeholder="נכס: אפל / AAPL / ביטקוין" value="AAPL" style="min-width:200px" />
+          <div>
+            <div class="label" style="margin:0 0 4px">ממוצע מהיר (ימים)</div>
+            <input type="number" id="bt-fast" value="20" min="2" max="200" style="width:120px;background:#0b1220;border:1px solid #334155;color:var(--text);border-radius:10px;padding:11px 12px;font-size:16px" />
+          </div>
+          <div>
+            <div class="label" style="margin:0 0 4px">ממוצע איטי (ימים)</div>
+            <input type="number" id="bt-slow" value="50" min="3" max="400" style="width:120px;background:#0b1220;border:1px solid #334155;color:var(--text);border-radius:10px;padding:11px 12px;font-size:16px" />
+          </div>
+          <button class="go" id="bt-go" style="align-self:flex-end">⏳ הרץ בקטסט</button>
+        </div>
+        <div class="label" style="margin:8px 0 0">האסטרטגיה: קונים כשהממוצע המהיר חוצה מעל האיטי, ויוצאים למזומן כשהוא חוצה מתחת.</div>
+      </div>
+      <div id="bt-result"></div>
+    </div>
+
     <div class="hint">מבוסס על ועדת סוכנים: ניתוח טכני, מומנטום, ערך פונדמנטלי וניהול סיכונים.</div>
   </div>
 
@@ -152,11 +174,10 @@
 
     // ---------- tab switching ----------
     function switchTab(name) {
-      const isAnalyze = name === "analyze";
-      document.getElementById("view-analyze").classList.toggle("hidden", !isAnalyze);
-      document.getElementById("view-rank").classList.toggle("hidden", isAnalyze);
-      document.getElementById("tab-analyze").classList.toggle("active", isAnalyze);
-      document.getElementById("tab-rank").classList.toggle("active", !isAnalyze);
+      ["analyze", "rank", "backtest"].forEach(v => {
+        document.getElementById("view-" + v).classList.toggle("hidden", v !== name);
+        document.getElementById("tab-" + v).classList.toggle("active", v === name);
+      });
     }
 
     // ---------- autocomplete suggestions ----------
@@ -347,6 +368,72 @@
         paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)",
         xaxis: { color: "#94a3b8", gridcolor: "#273449" },
         yaxis: { title: "ציון %", color: "#94a3b8", gridcolor: "#273449", range: [-100, 100] },
+        font: { color: "#e2e8f0" },
+      }, { displayModeBar: false, responsive: true });
+    }
+
+    // ---------- BACKTEST ----------
+    const btGoBtn = document.getElementById("bt-go");
+    btGoBtn.onclick = backtest;
+    document.getElementById("bt-ticker").addEventListener("keydown", e => { if (e.key === "Enter") backtest(); });
+
+    async function backtest() {
+      const ticker = document.getElementById("bt-ticker").value.trim();
+      const fast = parseInt(document.getElementById("bt-fast").value, 10);
+      const slow = parseInt(document.getElementById("bt-slow").value, 10);
+      const el = document.getElementById("bt-result");
+      if (!ticker) return;
+      if (!(fast < slow)) {
+        el.innerHTML = '<div class="card err">הממוצע המהיר חייב להיות קטן מהאיטי.</div>';
+        return;
+      }
+      btGoBtn.disabled = true;
+      el.innerHTML = '<div class="card spinner">⏳ מריץ סימולציה היסטורית על ' + ticker + '...</div>';
+      try {
+        const r = await fetch(`/api/backtest?ticker=${encodeURIComponent(ticker)}&fast=${fast}&slow=${slow}`);
+        if (r.status === 404) { el.innerHTML = '<div class="card err">לא נמצאו נתונים ל"' + ticker + '".</div>'; return; }
+        const d = await r.json();
+        if (d.status === "private") { el.innerHTML = '<div class="card err">' + d.message + '</div>'; return; }
+        if (!r.ok) { el.innerHTML = '<div class="card err">' + (d.message || "לא ניתן להריץ בקטסט לנכס הזה.") + '</div>'; return; }
+        renderBacktest(d);
+      } catch (err) {
+        el.innerHTML = '<div class="card err">שגיאת רשת. נסה שוב.</div>';
+      } finally {
+        btGoBtn.disabled = false;
+      }
+    }
+
+    function renderBacktest(d) {
+      const stratColor = d.total_return >= 0 ? "#2ecc71" : "#e67e22";
+      const beat = d.total_return >= d.buy_hold_return;
+      const resolvedNote = (d.query && d.query.toUpperCase() !== d.ticker)
+        ? `<div class="meta" style="text-align:center">חיפשת: ${d.query} → <b>${d.ticker}</b></div>` : "";
+      document.getElementById("bt-result").innerHTML = `
+        <div class="card">
+          ${resolvedNote}
+          <div class="grid" style="grid-template-columns:1fr 1fr 1fr">
+            <div class="best"><div class="k">תשואת האסטרטגיה</div><div class="v" style="color:${stratColor}">${signPct(d.total_return)}</div></div>
+            <div class="best"><div class="k">קנה-והחזק</div><div class="v">${signPct(d.buy_hold_return)}</div></div>
+            <div class="best"><div class="k">מספר עסקאות</div><div class="v">${d.n_trades}</div></div>
+          </div>
+          <div class="summary">${beat
+            ? "✅ האסטרטגיה הכתה את שיטת ה'קנה-והחזק' בתקופה זו."
+            : "ℹ️ בתקופה זו דווקא פשוט להחזיק את הנכס (קנה-והחזק) היה עדיף. זה נפוץ מאוד!"}
+            <div style="color:var(--muted);font-size:12px;margin-top:6px">מבוסס על ממוצעים נעים ${d.fast}/${d.slow}. ביצועי עבר אינם ערובה לעתיד.</div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="label">שווי תיק לאורך זמן (התחלה: $10,000)</div>
+          <div id="bt-chart"></div>
+        </div>`;
+      Plotly.newPlot("bt-chart", [{
+        x: d.curve.dates, y: d.curve.equity, type: "scatter", mode: "lines",
+        line: { color: stratColor, width: 2 }, name: "אסטרטגיה",
+      }], {
+        height: 300, margin: { t: 10, b: 30, l: 55, r: 10 },
+        paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)",
+        xaxis: { color: "#94a3b8", gridcolor: "#273449" },
+        yaxis: { color: "#94a3b8", gridcolor: "#273449", tickprefix: "$" },
         font: { color: "#e2e8f0" },
       }, { displayModeBar: false, responsive: true });
     }

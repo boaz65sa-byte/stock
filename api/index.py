@@ -26,6 +26,7 @@ from investment_agents.config import settings  # noqa: E402
 from investment_agents.data import get_asset  # noqa: E402
 from investment_agents.explain import explain_recommendation  # noqa: E402
 from investment_agents.orchestrator import Committee  # noqa: E402
+from investment_agents.portfolio import backtest_sma_cross  # noqa: E402
 from investment_agents.tickers import resolve  # noqa: E402
 
 app = FastAPI(title="Investment Agents API", version="1.0.0")
@@ -147,3 +148,48 @@ def rank(tickers: str = Query(...), period: str = Query("1y")) -> JSONResponse:
             }
         )
     return JSONResponse(content={"results": out, "skipped": skipped})
+
+
+@app.get("/api/backtest")
+def backtest(
+    ticker: str = Query(..., min_length=1),
+    fast: int = Query(20, ge=2, le=200),
+    slow: int = Query(50, ge=3, le=400),
+) -> JSONResponse:
+    if fast >= slow:
+        return JSONResponse(status_code=400, content={"error": "fast_ge_slow"})
+
+    r = resolve(ticker)
+    if r.private_name:
+        return JSONResponse(
+            status_code=200,
+            content={"status": "private", "name": r.private_name,
+                     "message": f"{r.private_name} היא חברה פרטית שאינה נסחרת בבורסה."},
+        )
+    if not r.ticker:
+        return JSONResponse(status_code=404, content={"error": "no_data", "ticker": ticker})
+
+    try:
+        res = backtest_sma_cross(r.ticker, fast, slow)
+    except ValueError as exc:
+        return JSONResponse(status_code=400, content={"error": "insufficient_history", "message": str(exc)})
+    except Exception as exc:  # network / bad symbol
+        return JSONResponse(status_code=502, content={"error": f"fetch failed: {type(exc).__name__}"})
+
+    curve = res.equity_curve
+    return JSONResponse(
+        content={
+            "status": "ok",
+            "query": r.query,
+            "ticker": res.ticker,
+            "fast": fast,
+            "slow": slow,
+            "total_return": res.total_return,
+            "buy_hold_return": res.buy_hold_return,
+            "n_trades": res.n_trades,
+            "curve": {
+                "dates": [d.strftime("%Y-%m-%d") for d in curve.index],
+                "equity": [round(float(v), 2) for v in curve.values],
+            },
+        }
+    )
