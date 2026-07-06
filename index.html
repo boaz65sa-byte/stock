@@ -94,6 +94,7 @@
       <button class="tab active" id="tab-analyze" onclick="switchTab('analyze')">🔍 בדיקת נכס</button>
       <button class="tab" id="tab-rank" onclick="switchTab('rank')">🏆 השוואת נכסים</button>
       <button class="tab" id="tab-backtest" onclick="switchTab('backtest')">⏳ בקטסט</button>
+      <button class="tab" id="tab-portfolio" onclick="switchTab('portfolio')">💼 בניית תיק</button>
       <button class="tab" id="tab-howto" onclick="switchTab('howto')">📚 איך להשקיע</button>
     </div>
 
@@ -102,6 +103,9 @@
       <div class="card" id="favs-card" style="display:none">
         <div class="label">⭐ המועדפים שלי (לחיצה בודקת מחדש):</div>
         <div class="pops" id="favs"></div>
+        <div class="row" style="margin-top:10px">
+          <button class="go" id="check-all-favs" style="background:#334155;color:var(--text)">🏆 בדוק ודרג את כל המועדפים</button>
+        </div>
       </div>
       <div class="card">
         <div class="label">בחר נכס פופולרי, או הקלד סימבול משלך:</div>
@@ -159,6 +163,26 @@
         <div class="label" style="margin:8px 0 0">האסטרטגיה: קונים כשהממוצע המהיר חוצה מעל האיטי, ויוצאים למזומן כשהוא חוצה מתחת.</div>
       </div>
       <div id="bt-result"></div>
+    </div>
+
+    <!-- ============ PORTFOLIO BUILDER VIEW ============ -->
+    <div id="view-portfolio" class="hidden">
+      <div class="card">
+        <div class="label">הזן סכום ורשימת נכסים — המערכת תחלק את הסכום לפי חוזק ההמלצה של כל נכס:</div>
+        <div class="pops" id="pf-pops"></div>
+        <div class="row" style="flex-wrap:wrap;gap:12px">
+          <div>
+            <div class="label" style="margin:0 0 4px">סכום להשקעה ($)</div>
+            <input type="number" id="pf-amount" value="10000" min="100" step="100" style="width:150px;background:#0b1220;border:1px solid #334155;color:var(--text);border-radius:10px;padding:11px 12px;font-size:16px" />
+          </div>
+          <input type="text" id="pf-tickers" list="suggest" placeholder="אפל, מיקרוסופט, זהב, ביטקוין" style="min-width:220px;align-self:flex-end" />
+          <button class="go" id="pf-go" style="align-self:flex-end">💼 בנה תיק</button>
+        </div>
+        <div class="row" style="margin-top:10px">
+          <button class="go" id="pf-use-favs" style="background:#334155;color:var(--text)">⭐ השתמש במועדפים שלי</button>
+        </div>
+      </div>
+      <div id="pf-result"></div>
     </div>
 
     <!-- ============ HOW TO INVEST VIEW ============ -->
@@ -227,7 +251,7 @@
 
     // ---------- tab switching ----------
     function switchTab(name) {
-      ["analyze", "rank", "backtest", "howto"].forEach(v => {
+      ["analyze", "rank", "backtest", "portfolio", "howto"].forEach(v => {
         document.getElementById("view-" + v).classList.toggle("hidden", v !== name);
         document.getElementById("tab-" + v).classList.toggle("active", v === name);
       });
@@ -285,6 +309,15 @@
         el.appendChild(chip);
       });
     }
+
+    // "check all favorites" -> fill rank input, switch to rank tab, run
+    document.getElementById("check-all-favs").onclick = () => {
+      const favs = getFavs();
+      if (!favs.length) return;
+      document.getElementById("rank-tickers").value = favs.join(", ");
+      switchTab("rank");
+      rank();
+    };
 
     // ---------- autocomplete suggestions ----------
     const suggestEl = document.getElementById("suggest");
@@ -557,6 +590,102 @@
         xaxis: { color: "#94a3b8", gridcolor: "#273449" },
         yaxis: { color: "#94a3b8", gridcolor: "#273449", tickprefix: "$" },
         font: { color: "#e2e8f0" },
+      }, { displayModeBar: false, responsive: true });
+    }
+
+    // ---------- PORTFOLIO BUILDER ----------
+    const pfSelected = new Set(["AAPL", "MSFT", "NVDA", "SPY"]);
+    const pfPopsEl = document.getElementById("pf-pops");
+    const pfInput = document.getElementById("pf-tickers");
+    function syncPfInput() { pfInput.value = [...pfSelected].join(", "); }
+    function refreshPfPops() {
+      [...pfPopsEl.children].forEach(b => b.classList.toggle("on", pfSelected.has(b.dataset.tk)));
+    }
+    POPULAR.forEach(([label, tk]) => {
+      const b = document.createElement("button");
+      b.className = "pop"; b.textContent = label; b.dataset.tk = tk;
+      b.onclick = () => {
+        if (pfSelected.has(tk)) pfSelected.delete(tk);
+        else if (pfSelected.size < 12) pfSelected.add(tk);
+        syncPfInput(); refreshPfPops();
+      };
+      pfPopsEl.appendChild(b);
+    });
+    syncPfInput(); refreshPfPops();
+
+    document.getElementById("pf-use-favs").onclick = () => {
+      const favs = getFavs();
+      if (!favs.length) { alert("אין עדיין מועדפים. שמור נכסים בלשונית 'בדיקת נכס'."); return; }
+      pfInput.value = favs.join(", ");
+    };
+
+    const pfGoBtn = document.getElementById("pf-go");
+    pfGoBtn.onclick = buildPortfolio;
+    pfInput.addEventListener("keydown", e => { if (e.key === "Enter") buildPortfolio(); });
+
+    async function buildPortfolio() {
+      const tickers = pfInput.value.trim();
+      const amount = parseFloat(document.getElementById("pf-amount").value);
+      const el = document.getElementById("pf-result");
+      if (!tickers || !(amount > 0)) return;
+      pfGoBtn.disabled = true;
+      el.innerHTML = '<div class="card spinner">⏳ בונה תיק מומלץ...</div>';
+      try {
+        const r = await fetch(`/api/portfolio?tickers=${encodeURIComponent(tickers)}&amount=${amount}`);
+        const d = await r.json();
+        if (!r.ok) { el.innerHTML = '<div class="card err">' + (d.error === "no_tickers" ? "לא זוהו נכסים תקינים." : "שגיאה בבניית התיק.") + '</div>'; return; }
+        renderPortfolio(d, amount);
+      } catch (err) {
+        el.innerHTML = '<div class="card err">שגיאת רשת. נסה שוב.</div>';
+      } finally {
+        pfGoBtn.disabled = false;
+      }
+    }
+
+    function renderPortfolio(d, amount) {
+      const el = document.getElementById("pf-result");
+      const allocs = d.allocations || [];
+      const rows = allocs.map(a => `
+        <div class="rank-row">
+          <div class="tk">${a.emoji} ${a.ticker}</div>
+          <div class="bar-wrap"><div class="bar" style="right:0;width:${Math.min(100, a.weight_pct)}%;background:${a.color}"></div></div>
+          <div class="vd">${a.verdict}</div>
+          <div class="sc">${a.weight_pct}%</div>
+          <div class="sc" style="color:${a.color}">$${fmt(a.amount)}</div>
+        </div>`).join("");
+
+      const skipNote = (d.skipped && d.skipped.length)
+        ? `<div class="summary">ℹ️ דילגתי על חברות פרטיות: ${d.skipped.join(", ")}</div>` : "";
+      const excludedNote = (d.excluded && d.excluded.length)
+        ? `<div class="summary" style="color:var(--muted);font-size:13px">לא הוקצה כסף ל: ${d.excluded.join(", ")} (המלצה ניטרלית/שלילית כרגע).</div>` : "";
+
+      el.innerHTML = `
+        <div class="card">
+          <div class="label">💼 חלוקת תיק מוצעת לסכום של $${fmt(amount)}</div>
+          <div id="pf-chart"></div>
+        </div>
+        <div class="card">
+          ${allocs.length ? rows : '<div class="err">אין כרגע נכסים חיוביים להשקעה.</div>'}
+          <div class="rank-row" style="border-top:2px solid #334155">
+            <div class="tk">💵 מזומן</div>
+            <div class="bar-wrap"><div class="bar" style="right:0;width:${Math.min(100, amount>0?d.cash/amount*100:0)}%;background:#64748b"></div></div>
+            <div class="vd">נשאר בצד</div>
+            <div class="sc"></div>
+            <div class="sc">$${fmt(d.cash)}</div>
+          </div>
+          <div class="summary" style="margin-top:10px">📝 ${d.note}</div>
+          ${skipNote}${excludedNote}
+        </div>`;
+
+      const labels = allocs.map(a => a.ticker).concat(["מזומן"]);
+      const values = allocs.map(a => a.amount).concat([d.cash]);
+      const colors = allocs.map(a => a.color).concat(["#64748b"]);
+      Plotly.newPlot("pf-chart", [{
+        type: "pie", labels, values, marker: { colors },
+        textinfo: "label+percent", hole: 0.45,
+      }], {
+        height: 340, margin: { t: 10, b: 10, l: 10, r: 10 },
+        paper_bgcolor: "rgba(0,0,0,0)", font: { color: "#e2e8f0" }, showlegend: false,
       }, { displayModeBar: false, responsive: true });
     }
 

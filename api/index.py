@@ -22,7 +22,7 @@ from fastapi import FastAPI, Query  # noqa: E402
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 from fastapi.responses import HTMLResponse, JSONResponse  # noqa: E402
 
-from investment_agents.advice import action_plan  # noqa: E402
+from investment_agents.advice import action_plan, suggest_allocation  # noqa: E402
 from investment_agents.config import settings  # noqa: E402
 from investment_agents.data import get_asset  # noqa: E402
 from investment_agents.explain import explain_recommendation  # noqa: E402
@@ -150,6 +150,45 @@ def rank(tickers: str = Query(...), period: str = Query("1y")) -> JSONResponse:
             }
         )
     return JSONResponse(content={"results": out, "skipped": skipped})
+
+
+@app.get("/api/portfolio")
+def portfolio(
+    tickers: str = Query(...),
+    amount: float = Query(10000.0, gt=0),
+    period: str = Query("1y"),
+) -> JSONResponse:
+    settings.history_period = period
+    resolved: list[str] = []
+    skipped: list[str] = []
+    for raw in tickers.split(","):
+        raw = raw.strip()
+        if not raw:
+            continue
+        r = resolve(raw)
+        if r.private_name:
+            skipped.append(r.private_name)
+        elif r.ticker:
+            resolved.append(r.ticker)
+    seen: set[str] = set()
+    tks = [t for t in resolved if not (t in seen or seen.add(t))][:12]
+    if not tks:
+        return JSONResponse(status_code=400, content={"error": "no_tickers", "skipped": skipped})
+
+    recs = _committee.rank(tks)
+    alloc = suggest_allocation(recs, amount)
+
+    # enrich allocations with display fields
+    by_ticker = {r.ticker: r for r in recs}
+    for a in alloc["allocations"]:
+        info = explain_recommendation(by_ticker[a["ticker"]])
+        a["verdict"] = info["verdict"]
+        a["emoji"] = info["emoji"]
+        a["color"] = info["color"]
+
+    alloc["skipped"] = skipped
+    alloc["amount"] = amount
+    return JSONResponse(content=alloc)
 
 
 @app.get("/api/backtest")
