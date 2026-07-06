@@ -84,6 +84,19 @@
     .rank-row .sc { width: 56px; text-align: left; font-variant-numeric: tabular-nums; font-weight: 700; }
     .hidden { display: none; }
     .q { margin-bottom: 16px; }
+    /* Advisor "what to do" step list */
+    .advisor-top { border: 1px solid #2e7d55; background: #0d1a14; }
+    .summary-big { font-size: 15px; line-height: 1.6; }
+    .summary-big b { color: #e2e8f0; }
+    .step { display: flex; gap: 12px; padding: 12px 4px; border-bottom: 1px solid #2b3a52; align-items: flex-start; }
+    .step:last-child { border-bottom: none; }
+    .step-num { flex: 0 0 34px; width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 800; color: #0b1220; font-size: 15px; }
+    .step-body { flex: 1; }
+    .step-title { font-size: 15px; font-weight: 600; line-height: 1.5; }
+    .step-title b { color: #fff; }
+    .step-title .tick { color: var(--muted); font-size: 12px; font-weight: 700; background: #0b1220; padding: 1px 6px; border-radius: 5px; margin-inline-start: 4px; }
+    .step-why { color: #94a3b8; font-size: 13px; margin-top: 3px; }
+    .step-meta { color: #64748b; font-size: 12px; margin-top: 3px; font-variant-numeric: tabular-nums; }
     .opts { display: flex; flex-wrap: wrap; gap: 8px; }
     .opt {
       background: var(--card2); border: 1px solid #334155; color: var(--text);
@@ -790,33 +803,51 @@
     function renderAdvisor(d) {
       const el = document.getElementById("ad-result");
       const allocs = d.allocations || [];
-      const rows = allocs.map(a => `
-        <div class="rank-row">
-          <div class="tk">${a.emoji} ${a.ticker}</div>
-          <div class="bar-wrap"><div class="bar" style="right:0;width:${Math.min(100, a.weight_pct)}%;background:${a.color}"></div></div>
-          <div class="vd">${a.verdict}</div>
-          <div class="sc">${a.weight_pct}%</div>
-          <div class="sc" style="color:${a.color}">$${fmt(a.amount)}</div>
+
+      // Step-by-step "what to do now": what / where / how much / why.
+      const steps = allocs.map((a, i) => `
+        <div class="step">
+          <div class="step-num" style="background:${a.color}">${i + 1}</div>
+          <div class="step-body">
+            <div class="step-title">קנה ב-<b>$${fmt(a.amount)}</b> (${a.weight_pct}% מהתיק) — ${a.name_he} <span class="tick">${a.ticker}</span></div>
+            <div class="step-why">${a.why || a.role_he || ""}</div>
+            ${a.price != null ? `<div class="step-meta">מחיר נוכחי ~$${fmt(a.price)} · ציון סוכנים: ${a.score_pct}%</div>` : ""}
+          </div>
         </div>`).join("");
 
+      const investedPct = d.amount > 0 ? Math.round(d.invested / d.amount * 100) : 0;
+      const cashPct = d.amount > 0 ? Math.round(d.cash / d.amount * 100) : 0;
+
       el.innerHTML = `
-        <div class="card">
-          <div class="label">🧭 למה התיק הזה? (ההיגיון מאחורי ההחלטה)</div>
-          ${d.reasoning.map(x => `<div class="sig"><div class="e">•</div><div class="name">${x}</div></div>`).join("")}
+        <div class="card advisor-top">
+          <div class="label">✅ מה עושים עכשיו — התוכנית שלך בקצרה</div>
+          <div class="summary-big">
+            מתוך <b>$${fmt(d.amount)}</b>: להשקיע <b>$${fmt(d.invested)}</b> (${investedPct}%) ב-${allocs.length} נכסים,
+            ולהשאיר <b>$${fmt(d.cash)}</b> (${cashPct}%) במזומן בצד.
+          </div>
+          <div class="summary-big" style="color:#94a3b8;font-size:13px;margin-top:6px">בצע לפי הסדר הבא (מהגדול לקטן). מומלץ לפצל כל קנייה לכמה מנות לאורך חודש-חודשיים.</div>
         </div>
+
         <div class="card">
-          <div class="label">💼 חלוקת התיק המומלצת — $${fmt(d.amount)}</div>
+          <div class="label">🛒 רשימת הקניות — שלב אחר שלב</div>
+          ${allocs.length ? steps : '<div class="err">לפי הפרופיל עדיף להחזיק מזומן כרגע ולהמתין.</div>'}
+          <div class="step">
+            <div class="step-num" style="background:#64748b">💵</div>
+            <div class="step-body">
+              <div class="step-title">להשאיר <b>$${fmt(d.cash)}</b> (${cashPct}%) במזומן</div>
+              <div class="step-why">כרית נזילות/בטחון — מאפשר לקנות בהזדמנות ומקטין סיכון.</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="label">📊 איך זה נראה כעוגה</div>
           <div id="ad-chart"></div>
         </div>
+
         <div class="card">
-          ${allocs.length ? rows : '<div class="err">לפי הפרופיל עדיף להחזיק מזומן כרגע.</div>'}
-          <div class="rank-row" style="border-top:2px solid #334155">
-            <div class="tk">💵 מזומן</div>
-            <div class="bar-wrap"><div class="bar" style="right:0;width:${Math.min(100, d.amount>0?d.cash/d.amount*100:0)}%;background:#64748b"></div></div>
-            <div class="vd">נזילות / בצד</div>
-            <div class="sc"></div>
-            <div class="sc">$${fmt(d.cash)}</div>
-          </div>
+          <div class="label">🧭 למה דווקא ככה? (ההיגיון מאחורי ההחלטה)</div>
+          ${d.reasoning.map(x => `<div class="sig"><div class="e">•</div><div class="name">${x}</div></div>`).join("")}
           <div class="summary" style="margin-top:10px">📝 ${d.note}</div>
         </div>`;
 

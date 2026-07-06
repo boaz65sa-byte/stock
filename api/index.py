@@ -180,7 +180,7 @@ def portfolio(
     if not tks:
         return JSONResponse(status_code=400, content={"error": "no_tickers", "skipped": skipped})
 
-    recs = _committee.rank(tks)
+    recs = _committee.rank(tks, with_info=False)
     alloc = suggest_allocation(recs, amount)
 
     # enrich allocations with display fields
@@ -209,7 +209,7 @@ def advisor(
     profile = {"horizon": horizon, "risk": risk, "goal": goal, "include_crypto": crypto}
 
     tickers, _, _ = advisor_universe(goal, risk, crypto)
-    recs = _committee.rank(tickers)
+    recs = _committee.rank(tickers, with_info=False)
     result = build_advisor(profile, recs, amount)
 
     by_ticker = {r.ticker: r for r in recs}

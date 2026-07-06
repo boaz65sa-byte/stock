@@ -92,17 +92,48 @@ def action_plan(rec: Recommendation) -> dict:
 
 # Candidate assets grouped by class.
 UNIVERSE_CLASSES: dict[str, list[str]] = {
-    "broad": ["SPY", "QQQ"],                       # broad market ETFs
-    "growth": ["AAPL", "MSFT", "NVDA", "GOOGL", "AMZN"],  # large-cap growth
-    "diversifier": ["GC=F"],                        # gold
-    "crypto": ["BTC-USD", "ETH-USD"],               # crypto
+    "broad": ["SPY", "QQQ"],                              # broad market ETFs
+    "growth": ["AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META"],  # large-cap growth
+    "sectors": ["XLK", "XLV", "XLF", "XLE"],             # tech/health/finance/energy
+    "bonds": ["TLT"],                                     # long-term treasuries
+    "diversifier": ["GC=F"],                             # gold
+    "israel": ["EIS"],                                   # iShares MSCI Israel ETF
+    "crypto": ["BTC-USD", "ETH-USD"],                    # crypto
+}
+
+# Short, human-friendly Hebrew names for each candidate ticker.
+TICKER_HE: dict[str, str] = {
+    "SPY": "מדד S&P 500 (500 החברות הגדולות בארה\"ב)",
+    "QQQ": "מדד נאסד\"ק 100 (חברות טכנולוגיה מובילות)",
+    "AAPL": "אפל", "MSFT": "מיקרוסופט", "NVDA": "אנבידיה",
+    "GOOGL": "גוגל (Alphabet)", "AMZN": "אמזון", "META": "מטא (פייסבוק)",
+    "XLK": "מגזר הטכנולוגיה (ETF)", "XLV": "מגזר הבריאות (ETF)",
+    "XLF": "מגזר הפיננסים (ETF)", "XLE": "מגזר האנרגיה (ETF)",
+    "TLT": "אג\"ח ממשלת ארה\"ב ארוכות (הגנה)",
+    "GC=F": "זהב", "EIS": "מדד ישראל (iShares Israel ETF)",
+    "BTC-USD": "ביטקוין", "ETH-USD": "אתריום",
+}
+
+# Class -> Hebrew role, so the user understands *why* each asset is there.
+CLASS_HE: dict[str, str] = {
+    "broad": "עוגן התיק — מדד רחב ומפוזר",
+    "growth": "מנוע צמיחה — מניה מובילה",
+    "sectors": "פיזור מגזרי — חשיפה לענף שלם",
+    "bonds": "כרית ביטחון — אג\"ח ממשלתי",
+    "diversifier": "הגנה מפני אינפלציה/משברים — זהב",
+    "israel": "חשיפה מקומית — שוק ישראל",
+    "crypto": "רכיב ספקולטיבי — קריפטו (סיכון גבוה)",
 }
 
 # Base split across classes for the invested portion, by goal.
+# Each goal must sum to ~1.0 across its classes.
 GOAL_CLASS_ALLOC: dict[str, dict[str, float]] = {
-    "growth":   {"broad": 0.30, "growth": 0.55, "diversifier": 0.05, "crypto": 0.10},
-    "balanced": {"broad": 0.45, "growth": 0.30, "diversifier": 0.15, "crypto": 0.10},
-    "preserve": {"broad": 0.60, "growth": 0.15, "diversifier": 0.25, "crypto": 0.00},
+    "growth":   {"broad": 0.22, "growth": 0.40, "sectors": 0.18, "bonds": 0.00,
+                 "diversifier": 0.05, "israel": 0.05, "crypto": 0.10},
+    "balanced": {"broad": 0.32, "growth": 0.20, "sectors": 0.16, "bonds": 0.08,
+                 "diversifier": 0.09, "israel": 0.05, "crypto": 0.10},
+    "preserve": {"broad": 0.40, "growth": 0.08, "sectors": 0.10, "bonds": 0.22,
+                 "diversifier": 0.15, "israel": 0.05, "crypto": 0.00},
 }
 
 CASH_BY_HORIZON = {"short": 0.40, "medium": 0.15, "long": 0.05}
@@ -206,11 +237,15 @@ def build_advisor(profile: dict, recs: Iterable[Recommendation], amount: float) 
             continue
         invested += amt
         r = rec_by_ticker[t]
+        cls = class_of.get(t, "")
         allocations.append(
             {
                 "ticker": t, "weight_pct": round(frac * 100, 1), "amount": amt,
                 "score_pct": r.score_pct, "action": r.action.value, "price": r.price,
-                "cls": class_of.get(t, ""),
+                "cls": cls,
+                "name_he": TICKER_HE.get(t, t),
+                "role_he": CLASS_HE.get(cls, ""),
+                "why": _alloc_why(r, cls),
             }
         )
     allocations.sort(key=lambda a: a["amount"], reverse=True)
@@ -223,6 +258,20 @@ def build_advisor(profile: dict, recs: Iterable[Recommendation], amount: float) 
     }
 
 
+def _alloc_why(rec: Recommendation, cls: str) -> str:
+    """One short line explaining why this asset earned its slot."""
+    role = CLASS_HE.get(cls, "רכיב בתיק")
+    if rec.score >= 0.35:
+        view = "הסוכנים חיוביים עליו כרגע"
+    elif rec.score >= 0.1:
+        view = "הסוכנים חיוביים במידה מתונה"
+    elif rec.score >= -0.1:
+        view = "הסוכנים נייטרליים — נכלל בעיקר לפיזור"
+    else:
+        view = "הסוכנים פושרים — משקל מוקטן, נכלל לפיזור"
+    return f"{role}. {view}."
+
+
 def _advisor_reasoning(horizon, risk, goal, include_crypto, cash_frac) -> list[str]:
     out = [
         f"מטרה: {GOAL_HE.get(goal, goal)} · {HORIZON_HE.get(horizon, horizon)} · סיכון {RISK_WORD_HE.get(risk, risk)}.",
@@ -231,11 +280,12 @@ def _advisor_reasoning(horizon, risk, goal, include_crypto, cash_frac) -> list[s
            else "(טווח ארוך — כמעט הכל מושקע)." if horizon == "long" else "."),
     ]
     if goal == "growth":
-        out.append("הטיה למניות צמיחה ולמדד הנאסד\"ק להאצת תשואה פוטנציאלית.")
+        out.append("הטיה למניות צמיחה ולמגזרי טכנולוגיה להאצת תשואה פוטנציאלית.")
     elif goal == "preserve":
-        out.append("דגש על מדדים רחבים וזהב לשמירה על יציבות.")
+        out.append("דגש על מדדים רחבים, אג\"ח ממשלתי וזהב לשמירה על יציבות.")
     else:
-        out.append("איזון בין מדדים רחבים, מניות צמיחה וזהב.")
+        out.append("איזון בין מדדים רחבים, מניות צמיחה, מגזרים, אג\"ח וזהב.")
+    out.append("התיק מפוזר על פני כמה סוגי נכסים (מדדים, מניות, מגזרים, אג\"ח, זהב, ישראל) כדי לא לשים את כל הביצים בסל אחד.")
     if risk == "low":
         out.append("סיכון נמוך: הגבלנו כל נכס ל-15% ולא כללנו קריפטו.")
     elif risk == "high":

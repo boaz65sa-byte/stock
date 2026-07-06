@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
 
 from .agents import BaseAgent, default_agents
@@ -53,11 +54,33 @@ class Committee:
             signals=signals,
         )
 
-    def analyze(self, ticker: str) -> Recommendation:
-        return self.analyze_asset(get_asset(ticker))
+    def analyze(self, ticker: str, with_info: bool = True) -> Recommendation:
+        return self.analyze_asset(get_asset(ticker, with_info=with_info))
 
-    def rank(self, tickers: list[str]) -> list[Recommendation]:
-        """Analyze many tickers and return them sorted best-first."""
-        recs = [self.analyze(t) for t in tickers]
+    def rank(
+        self, tickers: list[str], with_info: bool = True
+    ) -> list[Recommendation]:
+        """Analyze many tickers and return them sorted best-first.
+
+        Fetches run in parallel threads because the work is network-bound
+        (yfinance I/O releases the GIL), which keeps large universes fast.
+        Failed tickers are skipped so one bad symbol never breaks the batch.
+        """
+        recs: list[Recommendation] = []
+        if not tickers:
+            return recs
+
+        def _safe(t: str) -> Optional[Recommendation]:
+            try:
+                return self.analyze(t, with_info=with_info)
+            except Exception:
+                return None
+
+        max_workers = min(8, len(tickers))
+        with ThreadPoolExecutor(max_workers=max_workers) as ex:
+            for rec in ex.map(_safe, tickers):
+                if rec is not None:
+                    recs.append(rec)
+
         recs.sort(key=lambda r: r.score * r.confidence, reverse=True)
         return recs

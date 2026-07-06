@@ -4,7 +4,7 @@
     {
       "src": "api/index.py",
       "use": "@vercel/python",
-      "config": { "includeFiles": "investment_agents/**" }
+      "config": { "includeFiles": "investment_agents/**", "maxDuration": 60 }
     },
     { "src": "index.html", "use": "@vercel/static" }
   ],
