@@ -125,6 +125,26 @@ CLASS_HE: dict[str, str] = {
     "crypto": "רכיב ספקולטיבי — קריפטו (סיכון גבוה)",
 }
 
+# Class -> short label + plain explanation for beginners ("what is this?").
+CLASS_LABEL_HE: dict[str, str] = {
+    "broad": "מדדים רחבים",
+    "growth": "מניות צמיחה",
+    "sectors": "מגזרים",
+    "bonds": "אג\"ח ממשלתי",
+    "diversifier": "זהב",
+    "israel": "ישראל",
+    "crypto": "קריפטו",
+}
+CLASS_INFO_HE: dict[str, str] = {
+    "broad": "קרן שעוקבת אחרי מדד שלם (עשרות עד מאות חברות בבת אחת). הדרך הפשוטה והמפוזרת ביותר להשקיע בשוק — כשהכלכלה עולה, גם המדד עולה.",
+    "growth": "מניה של חברה בודדת גדולה וצומחת (כמו אפל או אנבידיה). פוטנציאל רווח גבוה, אבל תנודתית יותר ממדד כי הכל תלוי בחברה אחת.",
+    "sectors": "קרן שמשקיעה בענף שלם — למשל טכנולוגיה (XLK), בריאות (XLV), פיננסים (XLF) או אנרגיה (XLE). מאפשר להמר על תחום מסוים בלי לבחור מניה בודדת.",
+    "bonds": "הלוואה לממשלת ארה\"ב שמחזירה ריבית קבועה. יציב יחסית ונוטה לעלות דווקא כשמניות יורדות — לכן משמש ככרית ביטחון בתיק.",
+    "diversifier": "זהב — נכס מחסה קלאסי ששומר על ערך בזמן משברים ואינפלציה, וזז לרוב אחרת ממניות.",
+    "israel": "קרן שעוקבת אחרי המניות המובילות בישראל. נותנת חשיפה לשוק המקומי לצד השוק האמריקאי.",
+    "crypto": "מטבע דיגיטלי (ביטקוין/אתריום). סיכוי גבוה לרווח אך תנודתיות קיצונית — לכן מוגבל לחלק קטן מהתיק בלבד.",
+}
+
 # Base split across classes for the invested portion, by goal.
 # Each goal must sum to ~1.0 across its classes.
 GOAL_CLASS_ALLOC: dict[str, dict[str, float]] = {
@@ -251,9 +271,22 @@ def build_advisor(profile: dict, recs: Iterable[Recommendation], amount: float) 
     allocations.sort(key=lambda a: a["amount"], reverse=True)
     cash = round(amount - invested, 2)
 
+    # Beginner glossary: explain only the classes that actually appear.
+    glossary = []
+    seen: set[str] = set()
+    for a in allocations:
+        cls = a["cls"]
+        if cls and cls not in seen:
+            seen.add(cls)
+            glossary.append({
+                "cls": cls,
+                "label": CLASS_LABEL_HE.get(cls, cls),
+                "info": CLASS_INFO_HE.get(cls, ""),
+            })
+
     return {
         "amount": amount, "invested": round(invested, 2), "cash": cash,
-        "allocations": allocations, "reasoning": reasoning,
+        "allocations": allocations, "reasoning": reasoning, "glossary": glossary,
         "note": "החלוקה נבנתה מהפרופיל שלך יחד עם הציונים העדכניים של הסוכנים. חומר חינוכי בלבד.",
     }
 

@@ -97,6 +97,22 @@
     .step-title .tick { color: var(--muted); font-size: 12px; font-weight: 700; background: #0b1220; padding: 1px 6px; border-radius: 5px; margin-inline-start: 4px; }
     .step-why { color: #94a3b8; font-size: 13px; margin-top: 3px; }
     .step-meta { color: #64748b; font-size: 12px; margin-top: 3px; font-variant-numeric: tabular-nums; }
+    /* Glossary */
+    .gloss { padding: 8px 4px; border-bottom: 1px solid #2b3a52; }
+    .gloss:last-child { border-bottom: none; }
+    .gloss-t { font-weight: 700; color: #e2e8f0; margin-bottom: 2px; }
+    .gloss-d { color: #94a3b8; font-size: 13px; line-height: 1.5; }
+    /* Save / download + saved list */
+    .dl-row { display: flex; gap: 10px; flex-wrap: wrap; }
+    .go.alt { flex: 1; min-width: 140px; background: #1e293b; border: 1px solid #334155; }
+    .go.alt:hover { background: #273449; }
+    .saved-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 4px; border-bottom: 1px solid #2b3a52; }
+    .saved-row:last-child { border-bottom: none; }
+    .saved-info { font-size: 13px; color: #cbd5e1; }
+    .saved-btns { display: flex; gap: 6px; }
+    .mini { background: #1e293b; border: 1px solid #334155; color: #e2e8f0; border-radius: 6px; padding: 4px 12px; cursor: pointer; font-size: 13px; }
+    .mini:hover { background: #273449; }
+    .mini.del { border-color: #7f1d1d; color: #fca5a5; }
     .opts { display: flex; flex-wrap: wrap; gap: 8px; }
     .opt {
       background: var(--card2); border: 1px solid #334155; color: var(--text);
@@ -256,6 +272,7 @@
         <button class="go" id="ad-go" style="margin-top:6px;width:100%">🧭 בנה לי תיק</button>
       </div>
       <div id="ad-result"></div>
+      <div id="ad-saved"></div>
     </div>
 
     <!-- ============ HOW TO INVEST VIEW ============ -->
@@ -800,9 +817,12 @@
       }
     }
 
+    let lastPlan = null;
+
     function renderAdvisor(d) {
       const el = document.getElementById("ad-result");
       const allocs = d.allocations || [];
+      lastPlan = d;
 
       // Step-by-step "what to do now": what / where / how much / why.
       const steps = allocs.map((a, i) => `
@@ -849,7 +869,28 @@
           <div class="label">🧭 למה דווקא ככה? (ההיגיון מאחורי ההחלטה)</div>
           ${d.reasoning.map(x => `<div class="sig"><div class="e">•</div><div class="name">${x}</div></div>`).join("")}
           <div class="summary" style="margin-top:10px">📝 ${d.note}</div>
+        </div>
+
+        ${(d.glossary && d.glossary.length) ? `
+        <div class="card">
+          <div class="label">📖 מה כל דבר אומר? (מדריך קצר למתחילים)</div>
+          ${d.glossary.map(g => `
+            <div class="gloss">
+              <div class="gloss-t">${g.label}</div>
+              <div class="gloss-d">${g.info}</div>
+            </div>`).join("")}
+        </div>` : ""}
+
+        <div class="card">
+          <div class="label">💾 שמירה והורדה</div>
+          <div class="dl-row">
+            <button class="go alt" id="ad-save">⭐ שמור את התיק</button>
+            <button class="go alt" id="ad-dl">⬇️ הורד תוכנית (קובץ)</button>
+          </div>
         </div>`;
+
+      document.getElementById("ad-save").onclick = savePlan;
+      document.getElementById("ad-dl").onclick = downloadPlan;
 
       const labels = allocs.map(a => a.ticker).concat(["מזומן"]);
       const values = allocs.map(a => a.amount).concat([d.cash]);
@@ -861,6 +902,90 @@
         height: 340, margin: { t: 10, b: 10, l: 10, r: 10 },
         paper_bgcolor: "rgba(0,0,0,0)", font: { color: "#e2e8f0" }, showlegend: false,
       }, { displayModeBar: false, responsive: true });
+    }
+
+    // ---------- saved portfolios (localStorage) ----------
+    const SAVED_KEY = "savedPortfolios";
+    function getSaved() { try { return JSON.parse(localStorage.getItem(SAVED_KEY) || "[]"); } catch { return []; } }
+    function setSaved(v) { localStorage.setItem(SAVED_KEY, JSON.stringify(v)); }
+
+    function planToText(d) {
+      const p = d.profile || {};
+      const goalHe = { growth: "צמיחה", balanced: "מאוזן", preserve: "שימור הון" }[p.goal] || p.goal || "";
+      const riskHe = { low: "נמוך", medium: "בינוני", high: "גבוה" }[p.risk] || p.risk || "";
+      const horHe = { short: "טווח קצר", medium: "טווח בינוני", long: "טווח ארוך" }[p.horizon] || p.horizon || "";
+      const lines = [];
+      lines.push("תוכנית ההשקעה שלי");
+      lines.push("נוצר בתאריך: " + new Date().toLocaleString("he-IL"));
+      lines.push("פרופיל: מטרה " + goalHe + " | סיכון " + riskHe + " | " + horHe);
+      lines.push("סכום כולל: $" + fmt(d.amount) + " | מושקע: $" + fmt(d.invested) + " | מזומן: $" + fmt(d.cash));
+      lines.push("");
+      lines.push("מה עושים — שלב אחר שלב:");
+      (d.allocations || []).forEach((a, i) => {
+        lines.push((i + 1) + ". קנה ב-$" + fmt(a.amount) + " (" + a.weight_pct + "%) " + a.name_he + " [" + a.ticker + "]");
+        lines.push("   למה: " + (a.why || a.role_he || ""));
+      });
+      lines.push("💵 להשאיר במזומן: $" + fmt(d.cash));
+      lines.push("");
+      lines.push("למה התיק הזה:");
+      (d.reasoning || []).forEach(x => lines.push("- " + x));
+      lines.push("");
+      lines.push("חומר חינוכי בלבד — לא ייעוץ השקעות אישי.");
+      return lines.join("\n");
+    }
+
+    function downloadPlan() {
+      if (!lastPlan) return;
+      const text = planToText(lastPlan);
+      const blob = new Blob(["\uFEFF" + text], { type: "text/plain;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "תוכנית-השקעה.txt";
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    function savePlan() {
+      if (!lastPlan) return;
+      const list = getSaved();
+      const p = lastPlan.profile || {};
+      list.unshift({
+        id: Date.now(),
+        date: new Date().toLocaleDateString("he-IL"),
+        amount: lastPlan.amount,
+        profile: p,
+        data: lastPlan,
+      });
+      setSaved(list.slice(0, 20));
+      renderSaved();
+      const btn = document.getElementById("ad-save");
+      if (btn) { btn.textContent = "✅ נשמר!"; setTimeout(() => { btn.textContent = "⭐ שמור את התיק"; }, 1500); }
+    }
+
+    function deleteSaved(id) { setSaved(getSaved().filter(x => x.id !== id)); renderSaved(); }
+    function loadSaved(id) {
+      const item = getSaved().find(x => x.id === id);
+      if (item) { renderAdvisor(item.data); document.getElementById("ad-result").scrollIntoView({ behavior: "smooth" }); }
+    }
+
+    function renderSaved() {
+      const el = document.getElementById("ad-saved");
+      if (!el) return;
+      const list = getSaved();
+      if (!list.length) { el.innerHTML = ""; return; }
+      const goalHe = { growth: "צמיחה", balanced: "מאוזן", preserve: "שימור הון" };
+      const rows = list.map(x => `
+        <div class="saved-row">
+          <div class="saved-info">
+            <b>$${fmt(x.amount)}</b> · ${goalHe[x.profile.goal] || x.profile.goal || ""} · ${x.date}
+          </div>
+          <div class="saved-btns">
+            <button class="mini" onclick="loadSaved(${x.id})">פתח</button>
+            <button class="mini del" onclick="deleteSaved(${x.id})">מחק</button>
+          </div>
+        </div>`).join("");
+      el.innerHTML = `<div class="card"><div class="label">⭐ התיקים השמורים שלי</div>${rows}</div>`;
     }
 
     // ---------- shared ----------
@@ -903,6 +1028,7 @@
 
     // initial load
     renderFavs();
+    renderSaved();
     analyze();
   </script>
 </body>
