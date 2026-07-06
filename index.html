@@ -123,6 +123,7 @@
     table.cmp td.cmp-name { text-align: right; }
     table.cmp td:first-child { text-align: right; }
     table.cmp tr.cmp-cash td { color: #94a3b8; border-top: 2px solid #334155; }
+    .trend { background: #0b1220; border-radius: 8px; padding: 6px; margin: 0 4px 10px; }
     .opts { display: flex; flex-wrap: wrap; gap: 8px; }
     .opt {
       background: var(--card2); border: 1px solid #334155; color: var(--text);
@@ -804,22 +805,28 @@
     const adGoBtn = document.getElementById("ad-go");
     adGoBtn.onclick = buildAdvisor;
 
+    async function fetchAdvisor(profile, amount) {
+      const url = `/api/advisor?amount=${amount}&horizon=${profile.horizon}&risk=${profile.risk}&goal=${profile.goal}&crypto=${!!profile.include_crypto}`;
+      const r = await fetch(url);
+      const d = await r.json();
+      if (!r.ok) throw new Error("advisor_failed");
+      return d;
+    }
+
     async function buildAdvisor() {
       const amount = parseFloat(document.getElementById("ad-amount").value);
-      const horizon = document.getElementById("ad-horizon").dataset.val;
-      const risk = document.getElementById("ad-risk").dataset.val;
-      const goal = document.getElementById("ad-goal").dataset.val;
-      const crypto = document.getElementById("ad-crypto").dataset.val === "yes";
+      const profile = {
+        horizon: document.getElementById("ad-horizon").dataset.val,
+        risk: document.getElementById("ad-risk").dataset.val,
+        goal: document.getElementById("ad-goal").dataset.val,
+        include_crypto: document.getElementById("ad-crypto").dataset.val === "yes",
+      };
       const el = document.getElementById("ad-result");
       if (!(amount > 0)) { el.innerHTML = '<div class="card err">הזן סכום תקין.</div>'; return; }
       adGoBtn.disabled = true;
       el.innerHTML = '<div class="card spinner">⏳ בונה תיק מותאם אישית...</div>';
       try {
-        const url = `/api/advisor?amount=${amount}&horizon=${horizon}&risk=${risk}&goal=${goal}&crypto=${crypto}`;
-        const r = await fetch(url);
-        const d = await r.json();
-        if (!r.ok) { el.innerHTML = '<div class="card err">שגיאה בבניית התיק.</div>'; return; }
-        renderAdvisor(d);
+        renderAdvisor(await fetchAdvisor(profile, amount));
       } catch (err) {
         el.innerHTML = '<div class="card err">שגיאת רשת. נסה שוב.</div>';
       } finally {
@@ -896,11 +903,13 @@
           <div class="dl-row">
             <button class="go alt" id="ad-save">⭐ שמור את התיק</button>
             <button class="go alt" id="ad-dl">⬇️ הורד תוכנית (קובץ)</button>
+            <button class="go alt" id="ad-print">🖨️ הדפס / PDF</button>
           </div>
         </div>`;
 
       document.getElementById("ad-save").onclick = savePlan;
       document.getElementById("ad-dl").onclick = downloadPlan;
+      document.getElementById("ad-print").onclick = printPlan;
 
       const labels = allocs.map(a => a.ticker).concat(["מזומן"]);
       const values = allocs.map(a => a.amount).concat([d.cash]);
@@ -968,6 +977,14 @@
       group.querySelectorAll(".opt").forEach(b => b.classList.toggle("on", b.dataset.v === val));
     }
 
+    // Portfolio "health" = weighted avg of committee score across invested assets.
+    function planHealth(d) {
+      const a = d.allocations || [];
+      let w = 0, s = 0;
+      a.forEach(x => { w += x.weight_pct; s += x.weight_pct * (x.score_pct || 0); });
+      return w > 0 ? Math.round(s / w) : 0;
+    }
+
     function savePlan() {
       if (!lastPlan) return;
       const list = getSaved();
@@ -980,11 +997,38 @@
         amount: lastPlan.amount,
         profile: p,
         data: lastPlan,
+        history: [{ t: now, health: planHealth(lastPlan) }],
       });
       setSaved(list.slice(0, 20));
       renderSaved();
       const btn = document.getElementById("ad-save");
       if (btn) { btn.textContent = "✅ נשמר!"; setTimeout(() => { btn.textContent = "⭐ שמור את התיק"; }, 1500); }
+    }
+
+    // Open a clean, print-friendly window and trigger the browser's print/PDF.
+    function printPlan() {
+      if (!lastPlan) return;
+      const d = lastPlan, p = d.profile || {};
+      const steps = (d.allocations || []).map((a, i) =>
+        `<li><b>קנה ב-$${fmt(a.amount)}</b> (${a.weight_pct}%) — ${a.name_he} [${a.ticker}]<br><span style="color:#555">${a.why || ""}</span></li>`).join("");
+      const reasons = (d.reasoning || []).map(x => `<li>${x}</li>`).join("");
+      const gloss = (d.glossary || []).map(g => `<li><b>${g.label}:</b> ${g.info}</li>`).join("");
+      const w = window.open("", "_blank");
+      w.document.write(`<!doctype html><html dir="rtl" lang="he"><head><meta charset="utf-8">
+        <title>תוכנית השקעה</title>
+        <style>body{font-family:Arial,'Segoe UI',sans-serif;color:#111;max-width:720px;margin:24px auto;padding:0 16px;line-height:1.55}
+        h1{font-size:22px}h2{font-size:16px;margin-top:22px;border-bottom:2px solid #eee;padding-bottom:4px}
+        .box{background:#f5f7fa;border-radius:8px;padding:12px 16px;margin:10px 0}
+        ol,ul{padding-inline-start:20px}li{margin:6px 0}.foot{color:#777;font-size:12px;margin-top:24px}</style></head><body>
+        <h1>🧭 תוכנית ההשקעה שלי</h1>
+        <div class="box">מטרה: <b>${GOAL_HE[p.goal] || ""}</b> · סיכון <b>${({low:"נמוך",medium:"בינוני",high:"גבוה"})[p.risk] || ""}</b> · ${({short:"טווח קצר",medium:"טווח בינוני",long:"טווח ארוך"})[p.horizon] || ""}<br>
+        סכום כולל: <b>$${fmt(d.amount)}</b> · מושקע: <b>$${fmt(d.invested)}</b> · מזומן: <b>$${fmt(d.cash)}</b></div>
+        <h2>מה עושים — שלב אחר שלב</h2><ol>${steps}<li>💵 להשאיר <b>$${fmt(d.cash)}</b> במזומן</li></ol>
+        <h2>למה התיק הזה</h2><ul>${reasons}</ul>
+        <h2>מדריך קצר</h2><ul>${gloss}</ul>
+        <div class="foot">נוצר ב-${new Date().toLocaleString("he-IL")} · חומר חינוכי בלבד, לא ייעוץ השקעות אישי.</div>
+        <script>window.onload=function(){window.print();}<\/script></body></html>`);
+      w.document.close();
     }
 
     function deleteSaved(id) { compareSel.delete(id); setSaved(getSaved().filter(x => x.id !== id)); renderSaved(); }
@@ -993,9 +1037,11 @@
       if (item) { renderAdvisor(item.data); document.getElementById("ad-result").scrollIntoView({ behavior: "smooth" }); }
     }
 
-    // Re-check: reload the saved profile into the form and rebuild with fresh data.
-    function recheckSaved(id) {
-      const item = getSaved().find(x => x.id === id);
+    // Re-check: rebuild the saved profile with fresh data, show it, and log a
+    // snapshot so the portfolio's "health" can be tracked over time.
+    async function recheckSaved(id) {
+      const list = getSaved();
+      const item = list.find(x => x.id === id);
       if (!item) return;
       const p = item.profile || {};
       document.getElementById("ad-amount").value = item.amount;
@@ -1003,8 +1049,47 @@
       setOpt("ad-risk", p.risk || "medium");
       setOpt("ad-goal", p.goal || "balanced");
       setOpt("ad-crypto", p.include_crypto ? "yes" : "no");
-      document.getElementById("ad-go").scrollIntoView({ behavior: "smooth" });
-      buildAdvisor();
+      const el = document.getElementById("ad-result");
+      el.innerHTML = '<div class="card spinner">⏳ בודק מחדש עם נתונים עדכניים...</div>';
+      document.getElementById("ad-result").scrollIntoView({ behavior: "smooth" });
+      try {
+        const d = await fetchAdvisor(p, item.amount);
+        renderAdvisor(d);
+        const now = Date.now();
+        item.history = item.history || [];
+        item.history.push({ t: now, health: planHealth(d) });
+        item.history = item.history.slice(-30);
+        item.reviewOn = now + REVIEW_DAYS * DAY_MS;
+        item.data = d;
+        setSaved(list);
+        renderSaved();
+      } catch (err) {
+        el.innerHTML = '<div class="card err">שגיאת רשת בבדיקה החוזרת. נסה שוב.</div>';
+      }
+    }
+
+    const trendOpen = new Set();
+    function toggleTrend(id) {
+      if (trendOpen.has(id)) trendOpen.delete(id); else trendOpen.add(id);
+      renderSaved();
+    }
+    function drawTrends() {
+      getSaved().forEach(x => {
+        if (!trendOpen.has(x.id) || !(x.history && x.history.length >= 2)) return;
+        const div = document.getElementById("trend-" + x.id);
+        if (!div) return;
+        Plotly.newPlot(div, [{
+          x: x.history.map(h => new Date(h.t).toLocaleDateString("he-IL")),
+          y: x.history.map(h => h.health),
+          type: "scatter", mode: "lines+markers", line: { color: "#22c55e", width: 2 },
+        }], {
+          height: 200, margin: { t: 10, b: 30, l: 35, r: 10 },
+          paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)",
+          xaxis: { color: "#94a3b8", gridcolor: "#273449" },
+          yaxis: { color: "#94a3b8", gridcolor: "#273449", title: { text: "בריאות התיק %", font: { size: 11 } } },
+          font: { color: "#e2e8f0" },
+        }, { displayModeBar: false, responsive: true });
+      });
     }
 
     function toggleCompare(id) {
@@ -1056,6 +1141,9 @@
           ? `<span class="due">🔔 מומלץ לבדוק מחדש</span>`
           : (daysLeft != null ? `<span class="review">בדיקה חוזרת בעוד ${daysLeft} ימים</span>` : "");
         const checked = compareSel.has(x.id) ? "checked" : "";
+        const hasTrend = x.history && x.history.length >= 2;
+        const trendBtn = hasTrend ? `<button class="mini" onclick="toggleTrend(${x.id})">📈 מגמה</button>` : "";
+        const trendDiv = (hasTrend && trendOpen.has(x.id)) ? `<div id="trend-${x.id}" class="trend"></div>` : "";
         return `
         <div class="saved-row">
           <label class="cmp-check"><input type="checkbox" ${checked} onchange="toggleCompare(${x.id})"></label>
@@ -1065,12 +1153,14 @@
           <div class="saved-btns">
             <button class="mini" onclick="loadSaved(${x.id})">פתח</button>
             <button class="mini" onclick="recheckSaved(${x.id})">🔄 בדוק מחדש</button>
+            ${trendBtn}
             <button class="mini del" onclick="deleteSaved(${x.id})">מחק</button>
           </div>
-        </div>`;
+        </div>${trendDiv}`;
       }).join("");
-      const hint = compareSel.size < 2 ? '<div class="summary" style="margin-top:8px;font-size:12px">✔️ סמן שני תיקים כדי להשוות ביניהם.</div>' : "";
+      const hint = compareSel.size < 2 ? '<div class="summary" style="margin-top:8px;font-size:12px">✔️ סמן שני תיקים כדי להשוות ביניהם. 🔄 "בדוק מחדש" שומר תמונת מצב לגרף המגמה.</div>' : "";
       el.innerHTML = `<div class="card"><div class="label">⭐ התיקים השמורים שלי</div>${rows}${hint}</div>${renderCompare()}`;
+      drawTrends();
     }
 
     // ---------- shared ----------
