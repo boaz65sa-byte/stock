@@ -13,6 +13,7 @@ from typing import Optional
 
 from .config import settings
 from .explain import explain_recommendation
+from .llm_provider import chat_completion, model_name, provider_name
 from .orchestrator import Committee
 from .tickers import resolve
 from .watch import HoldingInput, watch_portfolio
@@ -32,12 +33,15 @@ SYSTEM_PROMPT = f"""אתה {ADVISOR_NAME}, יועץ השקעות AI אישי —
 - אל תשתמש באנגלית מיותרת. סימבולים של מניות (AAPL) מותרים."""
 
 NO_KEY_REPLY = (
-    f"שלום! אני {ADVISOR_NAME}, יועץ ה-AI האישי שלך — אבל כרגע אני לא מחובר למוח (OpenAI).\n\n"
-    "כדי להפעיל אותי:\n"
-    "1. צור מפתח API ב-platform.openai.com\n"
-    "2. הוסף `OPENAI_API_KEY` ב-Vercel (Settings → Environment Variables) או בקובץ `.env` מקומי\n"
-    "3. פרוס מחדש / הפעל מחדש את השרת\n\n"
-    "בינתיים אפשר להשתמש ב«תיק חכם», «סריקת שוק» ו«תיק חי» — הם עובדים גם בלי AI."
+    f"שלום! אני {ADVISOR_NAME}, יועץ ה-AI האישי שלך — אבל כרגע אני לא מחובר למוח (AI).\n\n"
+    "יש לך מנוי Gemini? מעולה:\n"
+    "1. היכנס ל-aistudio.google.com/apikey וצור מפתח API\n"
+    "2. הוסף ב-Vercel (Settings → Environment Variables):\n"
+    "   • `GEMINI_API_KEY` = המפתח שלך\n"
+    "   • (אופציונלי) `GEMINI_MODEL` = gemini-2.0-flash\n"
+    "3. Redeploy\n\n"
+    "או עם OpenAI: `OPENAI_API_KEY` מ-platform.openai.com\n\n"
+    "בינתיים: «תיק חכם», «סריקת שוק» ו«תיק חי» עובדים גם בלי AI."
 )
 
 
@@ -151,7 +155,7 @@ def chat(
     if context:
         user_block = f"[הקשר נוכחי]\n{context}\n\n[שאלת המשתמש]\n{message}"
 
-    messages: list[dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
+    messages: list[dict] = []
     for h in history[-10:]:
         role = h.get("role", "user")
         if role in ("user", "assistant"):
@@ -159,22 +163,15 @@ def chat(
     messages.append({"role": "user", "content": user_block[:4000]})
 
     try:
-        from openai import OpenAI
-
-        client = OpenAI(api_key=settings.openai_api_key)
-        resp = client.chat.completions.create(
-            model=settings.openai_model,
-            messages=messages,
-            temperature=0.55,
-            max_tokens=700,
-        )
-        reply = (resp.choices[0].message.content or "").strip()
+        reply = chat_completion(SYSTEM_PROMPT, messages, temperature=0.55, max_tokens=700)
         if not reply:
             reply = "לא הצלחתי לנסח תשובה — נסה לנסח שוב או לשאול בצורה אחרת."
         return {
             "reply": reply,
             "advisor_name": ADVISOR_NAME,
             "enabled": True,
+            "provider": provider_name(),
+            "model": model_name(),
             "context_used": bool(context),
         }
     except Exception as exc:
@@ -182,5 +179,6 @@ def chat(
             "reply": f"שגיאה בחיבור ל-AI ({type(exc).__name__}). בדוק את מפתח ה-API ונסה שוב.",
             "advisor_name": ADVISOR_NAME,
             "enabled": True,
+            "provider": provider_name(),
             "error": type(exc).__name__,
         }

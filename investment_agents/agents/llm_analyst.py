@@ -12,6 +12,7 @@ import json
 from ..config import Signal, settings
 from ..data import AssetData
 from .. import indicators as ta
+from ..llm_provider import json_completion
 from .base import BaseAgent
 
 
@@ -54,22 +55,11 @@ class LLMAnalystAgent(BaseAgent):
         if not asset.is_valid:
             return self._neutral("Not enough data for AI analysis.")
         if not settings.llm_enabled:
-            return self._neutral("AI analyst disabled (no OPENAI_API_KEY).")
+            return self._neutral("AI analyst disabled (no GEMINI_API_KEY / OPENAI_API_KEY).")
 
         try:
-            from openai import OpenAI
-
-            client = OpenAI(api_key=settings.openai_api_key)
-            resp = client.chat.completions.create(
-                model=settings.openai_model,
-                messages=[
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": self._summary(asset)},
-                ],
-                temperature=0.2,
-                response_format={"type": "json_object"},
-            )
-            data = json.loads(resp.choices[0].message.content)
+            raw = json_completion(SYSTEM_PROMPT, self._summary(asset), temperature=0.2)
+            data = json.loads(raw)
             return Signal(
                 agent=self.name,
                 score=float(data.get("score", 0.0)),

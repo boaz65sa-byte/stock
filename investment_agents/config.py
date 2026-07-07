@@ -80,13 +80,27 @@ class Settings:
     openai_api_key: Optional[str] = os.getenv("OPENAI_API_KEY") or None
     openai_model: str = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
+    # Google Gemini (AI Studio) — preferred when set; works with Gemini subscription API keys.
+    gemini_api_key: Optional[str] = (
+        os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY") or None
+    )
+    gemini_model: str = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+
     # How much recent history each analysis pulls (yfinance period string).
     history_period: str = "1y"
     history_interval: str = "1d"
 
     @property
     def llm_enabled(self) -> bool:
-        return bool(self.openai_api_key)
+        return bool(self.openai_api_key or self.gemini_api_key)
+
+    @property
+    def llm_provider(self) -> str:
+        if self.gemini_api_key:
+            return "gemini"
+        if self.openai_api_key:
+            return "openai"
+        return "none"
 
 
 settings = Settings()

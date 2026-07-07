@@ -36,6 +36,7 @@ from investment_agents.orchestrator import Committee  # noqa: E402
 from investment_agents.portfolio import backtest_sma_cross  # noqa: E402
 from investment_agents.scanner import agent_roster, scan_market  # noqa: E402
 from investment_agents.tickers import resolve  # noqa: E402
+from investment_agents.llm_provider import model_name, provider_name  # noqa: E402
 from investment_agents.personal_advisor import ADVISOR_NAME, chat as advisor_chat  # noqa: E402
 from investment_agents.watch import HoldingInput, watch_portfolio  # noqa: E402
 
@@ -67,7 +68,7 @@ def home() -> HTMLResponse:
 
 @app.get("/api/health")
 def health() -> dict:
-    return {"ok": True, "llm_enabled": settings.llm_enabled}
+    return {"ok": True, "llm_enabled": settings.llm_enabled, "llm_provider": settings.llm_provider}
 
 
 @app.get("/api/agents")
@@ -341,7 +342,8 @@ def advisor_status() -> JSONResponse:
         content={
             "enabled": settings.llm_enabled,
             "advisor_name": ADVISOR_NAME,
-            "model": settings.openai_model if settings.llm_enabled else None,
+            "provider": provider_name(),
+            "model": model_name(),
         }
     )
 

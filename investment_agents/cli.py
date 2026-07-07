@@ -247,9 +247,10 @@ def main(argv: list[str] | None = None) -> int:
 
     console.print(DISCLAIMER)
     if settings.llm_enabled:
-        console.print("[dim]AI analyst: ON[/dim]")
+        prov = settings.llm_provider
+        console.print(f"[dim]AI advisor: ON ({prov})[/dim]")
     else:
-        console.print("[dim]AI analyst: OFF (set OPENAI_API_KEY to enable)[/dim]")
+        console.print("[dim]AI advisor: OFF (set GEMINI_API_KEY or OPENAI_API_KEY)[/dim]")
 
     args.func(args)
     return 0

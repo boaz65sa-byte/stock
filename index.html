@@ -1843,9 +1843,14 @@
       if (!aiHistory.length) {
         try {
           const st = await (await fetch("/api/advisor/status")).json();
-          const greet = st.enabled
-            ? "שלום! אני אלי, יועץ ההשקעות AI האישי שלך 🤝\n\nאני רואה את הפרופיל והתיק שלך (אם הגדרת), ומשלב את כל הסוכנים.\n\nשאל אותי: «מה לעשות עכשיו?», «האם לצאת מ…?», «איך לפזר?» — ואענה בעברית פשוטה."
-            : "שלום! אני אלי — כרגע לא מחובר ל-OpenAI.\n\nהוסף OPENAI_API_KEY ב-Vercel או ב-.env כדי שאוכל לענות בצ'אט.\n\nבינתיים: «תיק חכם», «סריקת שוק» ו«תיק חי» עובדים בלי AI.";
+          let greet;
+          if (st.enabled && st.provider === "gemini") {
+            greet = "שלום! אני אלי 🤝 מחובר ל-Google Gemini (" + (st.model || "") + ").\n\nאני רואה את הפרופיל והתיק שלך. שאל אותי מה לעשות!";
+          } else if (st.enabled) {
+            greet = "שלום! אני אלי 🤝 מחובר ל-" + st.provider + ".\n\nשאל אותי: «מה לעשות עכשיו?», «האם לצאת מ…?»";
+          } else {
+            greet = "שלום! אני אלי — כרגע לא מחובר ל-AI.\n\nיש לך Gemini? הוסף GEMINI_API_KEY מ-aistudio.google.com/apikey\n(ב-Vercel: Settings → Environment Variables → Redeploy)\n\nבינתיים: «תיק חכם», «סריקת שוק» ו«תיק חי» עובדים בלי AI.";
+          }
           aiHistory.push({ role: "assistant", content: greet });
           saveChatHistory();
         } catch {}
