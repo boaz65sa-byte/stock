@@ -11,6 +11,7 @@ import json
 import re
 from typing import Optional
 
+from .agents.llm_analyst import LLMAnalystAgent
 from .config import settings
 from .explain import explain_recommendation
 from .llm_provider import chat_completion, model_name, provider_name
@@ -45,6 +46,35 @@ NO_KEY_REPLY = (
 )
 
 
+def _context_committee(committee: Committee) -> Committee:
+    """Use algorithmic agents only when building chat context (saves LLM quota)."""
+    agents = [a for a in committee.agents if not isinstance(a, LLMAnalystAgent)]
+    if len(agents) == len(committee.agents):
+        return committee
+    return Committee(agents=agents)
+
+
+def _llm_error_reply(exc: Exception) -> str:
+    name = type(exc).__name__
+    if name == "RateLimitError" or "rate limit" in str(exc).lower() or "quota" in str(exc).lower():
+        provider = "Gemini" if provider_name() == "gemini" else "OpenAI"
+        return (
+            f"הגעת למגבלת בקשות של {provider} (RateLimit) — לא בעיה במפתח.\n\n"
+            "מה לעשות:\n"
+            "• המתן דקה-שתיים ונסה שוב\n"
+            "• אל תשלח הרבה הודעות ברצף\n"
+            "• ב-Gemini: בדוק מכסה ב-aistudio.google.com/apikey\n"
+            "• אופציונלי: `GEMINI_MODEL=gemini-2.0-flash-lite` ב-Vercel (מכסה גבוהה יותר)\n\n"
+            "«תיק חי» ו«סריקת שוק» עובדים בלי צ'אט AI."
+        )
+    if "auth" in name.lower() or "api key" in str(exc).lower() or "401" in str(exc):
+        return (
+            "מפתח ה-API לא תקין או פג תוקף.\n"
+            "בדוק `GEMINI_API_KEY` (או `OPENAI_API_KEY`) ב-Vercel → Redeploy."
+        )
+    return f"שגיאה בחיבור ל-AI ({name}). נסה שוב בעוד רגע."
+
+
 def _profile_text(profile: Optional[dict]) -> str:
     if not profile:
         return ""
@@ -75,7 +105,7 @@ def _portfolio_text(committee: Committee, portfolio: Optional[dict]) -> str:
     ]
     if not holdings:
         return ""
-    snap = watch_portfolio(committee, holdings, cash=float(portfolio.get("cash") or 0))
+    snap = watch_portfolio(_context_committee(committee), holdings, cash=float(portfolio.get("cash") or 0))
     lines = [
         f"תיק המשתמש (עדכון): שווי ${snap['total_value']:,.0f}, "
         f"רווח/הפסד {snap['total_pnl_pct']:+.1f}% (${snap['total_pnl_usd']:+,.0f}), "
@@ -109,10 +139,11 @@ def _extra_ticker_analysis(committee: Committee, message: str) -> str:
     tickers = _tickers_in_message(message)
     if not tickers:
         return ""
+    ctx = _context_committee(committee)
     lines = ["ניתוח סוכנים לנכסים שהוזכרו:"]
     for t in tickers:
         try:
-            rec = committee.analyze(t, with_info=False)
+            rec = ctx.analyze(t, with_info=False)
             info = explain_recommendation(rec)
             price = f"${rec.price:.2f}" if rec.price else "N/A"
             lines.append(
@@ -176,7 +207,7 @@ def chat(
         }
     except Exception as exc:
         return {
-            "reply": f"שגיאה בחיבור ל-AI ({type(exc).__name__}). בדוק את מפתח ה-API ונסה שוב.",
+            "reply": _llm_error_reply(exc),
             "advisor_name": ADVISOR_NAME,
             "enabled": True,
             "provider": provider_name(),

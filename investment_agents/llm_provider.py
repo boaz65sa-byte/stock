@@ -6,6 +6,8 @@ Falls back to OpenAI when only OPENAI_API_KEY is configured.
 
 from __future__ import annotations
 
+import time
+
 from .config import settings
 
 
@@ -34,19 +36,45 @@ def chat_completion(
 ) -> str:
     """Multi-turn chat. ``messages`` items: {role: user|assistant, content: str}."""
     if settings.gemini_api_key:
-        return _gemini_chat(system, messages, temperature, max_tokens)
+        return _with_rate_limit_retry(
+            lambda: _gemini_chat(system, messages, temperature, max_tokens)
+        )
     if settings.openai_api_key:
-        return _openai_chat(system, messages, temperature, max_tokens)
+        return _with_rate_limit_retry(
+            lambda: _openai_chat(system, messages, temperature, max_tokens)
+        )
     raise RuntimeError("No LLM API key configured")
 
 
 def json_completion(system: str, user: str, *, temperature: float = 0.2) -> str:
     """Single user turn; response should be JSON text."""
     if settings.gemini_api_key:
-        return _gemini_json(system, user, temperature)
+        return _with_rate_limit_retry(lambda: _gemini_json(system, user, temperature))
     if settings.openai_api_key:
-        return _openai_json(system, user, temperature)
+        return _with_rate_limit_retry(lambda: _openai_json(system, user, temperature))
     raise RuntimeError("No LLM API key configured")
+
+
+def _is_rate_limit(exc: BaseException) -> bool:
+    name = type(exc).__name__
+    if name in ("RateLimitError", "ResourceExhausted", "TooManyRequests"):
+        return True
+    msg = str(exc).lower()
+    return "rate limit" in msg or "quota" in msg or "429" in msg
+
+
+def _with_rate_limit_retry(fn, *, attempts: int = 3) -> str:
+    """Retry LLM calls when the provider returns a rate-limit / quota error."""
+    last: BaseException | None = None
+    for i in range(attempts):
+        try:
+            return fn()
+        except Exception as exc:
+            last = exc
+            if not _is_rate_limit(exc) or i >= attempts - 1:
+                raise
+            time.sleep(2 ** i)
+    raise last  # pragma: no cover
 
 
 def _openai_chat(system: str, messages: list[dict], temperature: float, max_tokens: int) -> str:
