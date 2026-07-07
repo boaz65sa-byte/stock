@@ -86,7 +86,8 @@ class Settings:
     )
     gemini_model: str = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
 
-    # How much recent history each analysis pulls (yfinance period string).
+    # Telegram bot for phone push alerts (create via @BotFather).
+    telegram_bot_token: Optional[str] = os.getenv("TELEGRAM_BOT_TOKEN") or None
     history_period: str = "1y"
     history_interval: str = "1d"
 

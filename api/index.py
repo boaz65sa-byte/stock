@@ -37,6 +37,13 @@ from investment_agents.portfolio import backtest_sma_cross  # noqa: E402
 from investment_agents.scanner import agent_roster, scan_market  # noqa: E402
 from investment_agents.tickers import resolve  # noqa: E402
 from investment_agents.llm_provider import model_name, provider_name  # noqa: E402
+from investment_agents.alerts import (  # noqa: E402
+    alert_digest,
+    evaluate_alerts,
+    format_telegram_digest,
+    send_telegram,
+    telegram_configured,
+)
 from investment_agents.personal_advisor import ADVISOR_NAME, chat as advisor_chat  # noqa: E402
 from investment_agents.watch import HoldingInput, watch_portfolio  # noqa: E402
 
@@ -306,11 +313,32 @@ class LiveHolding(BaseModel):
 class LivePortfolioRequest(BaseModel):
     holdings: list[LiveHolding]
     cash: float = Field(default=0.0, ge=0)
+    previous: dict | None = None
+    alert_settings: dict | None = None
+    telegram_chat_id: str | None = None
+    push_telegram: bool = False
+
+
+@app.get("/api/alerts/telegram/status")
+def telegram_status() -> JSONResponse:
+    return JSONResponse(content={"configured": telegram_configured()})
+
+
+@app.post("/api/alerts/telegram/test")
+def telegram_test(chat_id: str = Query(..., min_length=1)) -> JSONResponse:
+    if not telegram_configured():
+        return JSONResponse(status_code=503, content={"ok": False, "error": "telegram_not_configured"})
+    result = send_telegram(
+        chat_id,
+        "✅ <b>התראות תיק פעילות!</b>\nמעכשיו תקבל הודעות על תנודות, חריגות ואיתותי יציאה.\n<i>Investment Agents</i>",
+    )
+    status = 200 if result.get("ok") else 502
+    return JSONResponse(status_code=status, content=result)
 
 
 @app.post("/api/live")
 def live_portfolio(req: LivePortfolioRequest) -> JSONResponse:
-    """Live guardian: P&L + agent advice for each holding in a real portfolio."""
+    """Live guardian: P&L + agent advice + optional alerts push."""
     if not req.holdings:
         return JSONResponse(status_code=400, content={"error": "no_holdings"})
     if len(req.holdings) > 30:
@@ -321,6 +349,26 @@ def live_portfolio(req: LivePortfolioRequest) -> JSONResponse:
         for h in req.holdings
     ]
     result = watch_portfolio(_committee, holdings, cash=req.cash)
+    alerts = evaluate_alerts(result, req.previous, req.alert_settings)
+    result["alerts"] = alerts
+
+    if req.push_telegram and req.telegram_chat_id and alerts:
+        digest = alert_digest(alerts)
+        prev_digest = (req.alert_settings or {}).get("last_telegram_digest", "")
+        if digest != prev_digest:
+            summary = (
+                f"שווי ${result['total_value']:,.0f} · "
+                f"P&L {result['total_pnl_pct']:+.1f}%"
+            )
+            text = format_telegram_digest(alerts, summary)
+            result["telegram"] = send_telegram(req.telegram_chat_id, text)
+            if result["telegram"].get("ok"):
+                result["telegram_digest"] = digest
+        else:
+            result["telegram"] = {"ok": False, "skipped": True, "reason": "same_digest"}
+    else:
+        result["telegram"] = {"ok": False, "skipped": True}
+
     return JSONResponse(content=result)
 
 

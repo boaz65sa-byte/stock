@@ -161,6 +161,17 @@
     .live-holdings-edit .lh-row { display: grid; grid-template-columns: 1.2fr 0.7fr 0.8fr 32px; gap: 8px; margin-bottom: 8px; align-items: center; }
     .live-total { display: flex; flex-wrap: wrap; gap: 16px; font-size: 15px; margin: 10px 0; }
     .live-total b { font-size: 18px; }
+    .alert-settings { display: grid; gap: 12px; }
+    .alert-row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; font-size: 14px; }
+    .alert-row label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+    .alert-row input[type=number] { width: 70px; background: #0b1220; border: 1px solid #334155; color: var(--text); border-radius: 8px; padding: 6px 8px; }
+    .alert-row input[type=text] { width: 160px; flex: unset; padding: 8px 10px; font-size: 14px; }
+    .alert-banner { border-radius: 10px; padding: 10px 14px; margin-bottom: 10px; font-size: 14px; }
+    .alert-banner.high { background: #2a1515; border: 1px solid #7f1d1d; }
+    .alert-banner.medium { background: #2a2010; border: 1px solid #92400e; }
+    .alert-banner .ab-title { font-weight: 800; margin-bottom: 4px; }
+    .alert-banner .ab-body { color: #cbd5e1; font-size: 13px; }
+    #telegram-status { font-size: 12px; color: var(--muted); }
     /* AI personal advisor chat */
     .chat-wrap { display: flex; flex-direction: column; height: min(520px, 65vh); }
     .chat-msgs { flex: 1; overflow-y: auto; padding: 12px 8px; display: flex; flex-direction: column; gap: 12px; }
@@ -407,6 +418,31 @@
         <div class="row" style="margin-top:14px;gap:10px">
           <button class="go" id="live-start" style="flex:1">🔴 הפעל מעקב חי</button>
           <button class="go alt" id="live-stop" style="flex:1;background:#450a0a;border-color:#7f1d1d">⏹ עצור</button>
+        </div>
+      </div>
+      <div class="card" id="live-alerts-card">
+        <div class="label">📱 התראות לפלפון — חריגות, תנודות ותנועות</div>
+        <div class="summary" style="font-size:13px;margin-bottom:10px">
+          כשהמעקב פעיל, הסוכן בודק כל דקה ושולח התראה על: ירידות/קפיצות יומיות, שינוי ברווח/הפסד, איתותי יציאה/צמצום, ושינויי Guardian.
+          <br><b>Telegram:</b> צור בוט ב-<a href="https://t.me/BotFather" target="_blank" style="color:var(--accent)">@BotFather</a>,
+          הוסף <code>TELEGRAM_BOT_TOKEN</code> ב-Vercel, Chat ID מ-<a href="https://t.me/userinfobot" target="_blank" style="color:var(--accent)">@userinfobot</a>.
+        </div>
+        <div class="alert-settings">
+          <div class="alert-row">
+            <label><input type="checkbox" id="alert-browser" checked /> התראות בדפדפן</label>
+            <button class="go alt" id="alert-perm" style="background:#334155;padding:8px 14px;font-size:14px">🔔 אישור התראות</button>
+            <label><input type="checkbox" id="alert-telegram" /> Telegram לפלפון</label>
+            <input type="text" id="alert-chat-id" placeholder="Chat ID" dir="ltr" />
+            <button class="go alt" id="alert-telegram-test" style="background:#334155;padding:8px 14px;font-size:14px">בדיקה</button>
+            <span id="telegram-status"></span>
+          </div>
+          <div class="alert-row">
+            <span>תנודה יומית מ-%</span>
+            <input type="number" id="alert-day-pct" value="3" min="1" max="20" step="0.5" />
+            <span>שינוי P&L מ-%</span>
+            <input type="number" id="alert-pnl-pct" value="5" min="1" max="30" step="1" />
+            <label><input type="checkbox" id="alert-urgent-only" /> רק דחוף (יציאות + Guardian)</label>
+          </div>
         </div>
       </div>
       <div id="live-dashboard"></div>
@@ -1592,8 +1628,128 @@
 
     // ---------- LIVE PORTFOLIO GUARDIAN ----------
     const LIVE_KEY = "livePortfolio";
+    const ALERT_KEY = "liveAlertSettings";
+    const LIVE_SNAP_KEY = "livePortfolioSnapshot";
+    const SENT_ALERTS_KEY = "liveSentAlertKeys";
+    const TG_DIGEST_KEY = "liveLastTelegramDigest";
     let liveTimer = null;
     let liveActive = false;
+
+    function getAlertSettings() {
+      try {
+        return JSON.parse(localStorage.getItem(ALERT_KEY)) || {
+          browser: true, telegram: false, chatId: "",
+          day_pct: 3, pnl_pct: 5, urgent_only: false,
+        };
+      } catch {
+        return { browser: true, telegram: false, chatId: "", day_pct: 3, pnl_pct: 5, urgent_only: false };
+      }
+    }
+
+    function saveAlertSettingsFromUI() {
+      const s = {
+        browser: document.getElementById("alert-browser").checked,
+        telegram: document.getElementById("alert-telegram").checked,
+        chatId: document.getElementById("alert-chat-id").value.trim(),
+        day_pct: parseFloat(document.getElementById("alert-day-pct").value) || 3,
+        pnl_pct: parseFloat(document.getElementById("alert-pnl-pct").value) || 5,
+        urgent_only: document.getElementById("alert-urgent-only").checked,
+      };
+      localStorage.setItem(ALERT_KEY, JSON.stringify(s));
+      return s;
+    }
+
+    function loadAlertSettingsUI() {
+      const s = getAlertSettings();
+      document.getElementById("alert-browser").checked = s.browser !== false;
+      document.getElementById("alert-telegram").checked = !!s.telegram;
+      document.getElementById("alert-chat-id").value = s.chatId || "";
+      document.getElementById("alert-day-pct").value = s.day_pct ?? 3;
+      document.getElementById("alert-pnl-pct").value = s.pnl_pct ?? 5;
+      document.getElementById("alert-urgent-only").checked = !!s.urgent_only;
+    }
+
+    function portfolioSnapshot(d) {
+      return {
+        total_pnl_pct: d.total_pnl_pct,
+        guardian: { mood: d.guardian?.mood },
+        positions: (d.positions || []).map(p => ({
+          ticker: p.ticker,
+          pnl_pct: p.pnl_pct,
+          day_change_pct: p.day_change_pct,
+          current_price: p.current_price,
+          score_pct: p.score_pct,
+          advice: { code: p.advice.code, urgency: p.advice.urgency, label_he: p.advice.label_he },
+        })),
+      };
+    }
+
+    function getPreviousSnapshot() {
+      try { return JSON.parse(localStorage.getItem(LIVE_SNAP_KEY)); }
+      catch { return null; }
+    }
+
+    function saveSnapshot(d) {
+      localStorage.setItem(LIVE_SNAP_KEY, JSON.stringify(portfolioSnapshot(d)));
+    }
+
+    function alertDedupeKey(a) {
+      return a.type + "|" + (a.ticker || "") + "|" + a.title_he;
+    }
+
+    function pushBrowserAlerts(alerts) {
+      const cfg = getAlertSettings();
+      if (!cfg.browser || !alerts.length) return;
+      if (!("Notification" in window) || Notification.permission !== "granted") return;
+      let sent = [];
+      try { sent = JSON.parse(sessionStorage.getItem(SENT_ALERTS_KEY) || "[]"); } catch {}
+      alerts.forEach(a => {
+        const key = alertDedupeKey(a);
+        if (sent.includes(key)) return;
+        try {
+          new Notification(a.title_he, { body: a.body_he, tag: key });
+          sent.push(key);
+        } catch {}
+      });
+      sessionStorage.setItem(SENT_ALERTS_KEY, JSON.stringify(sent.slice(-60)));
+    }
+
+    async function checkTelegramStatus() {
+      const el = document.getElementById("telegram-status");
+      if (!el) return;
+      try {
+        const r = await fetch("/api/alerts/telegram/status");
+        const d = await r.json();
+        el.textContent = d.configured
+          ? "✅ שרת Telegram מוכן"
+          : "⚠️ הוסף TELEGRAM_BOT_TOKEN ב-Vercel";
+      } catch {
+        el.textContent = "";
+      }
+    }
+
+    async function testTelegram() {
+      saveAlertSettingsFromUI();
+      const chatId = document.getElementById("alert-chat-id").value.trim();
+      if (!chatId) { alert("הזן Chat ID מ-@userinfobot"); return; }
+      try {
+        const r = await fetch("/api/alerts/telegram/test?chat_id=" + encodeURIComponent(chatId), { method: "POST" });
+        const d = await r.json();
+        alert(d.ok ? "✅ נשלח! בדוק את Telegram." : "שגיאה: " + (d.error || "לא ידוע"));
+      } catch {
+        alert("שגיאת רשת");
+      }
+    }
+
+    async function requestNotificationPermission() {
+      if (!("Notification" in window)) {
+        alert("הדפדפן לא תומך בהתראות.");
+        return;
+      }
+      const p = await Notification.requestPermission();
+      if (p === "granted") alert("✅ התראות בדפדפן פעילות.");
+      else alert("לא אושרו התראות — אפשר ב הגדרות הדפדפן.");
+    }
 
     function getLiveState() {
       try { return JSON.parse(localStorage.getItem(LIVE_KEY)) || { cash: 0, holdings: [] }; }
@@ -1648,6 +1804,8 @@
     }
 
     function initLiveTab() {
+      loadAlertSettingsUI();
+      checkTelegramStatus();
       const st = getLiveState();
       renderLiveEditor(st);
       if (st.liveActive) {
@@ -1657,6 +1815,15 @@
         liveTimer = setInterval(() => refreshLive(false), 60000);
       }
     }
+
+    ["alert-browser", "alert-telegram", "alert-urgent-only"].forEach(id => {
+      document.getElementById(id).addEventListener("change", saveAlertSettingsFromUI);
+    });
+    ["alert-chat-id", "alert-day-pct", "alert-pnl-pct"].forEach(id => {
+      document.getElementById(id).addEventListener("change", saveAlertSettingsFromUI);
+    });
+    document.getElementById("alert-perm").onclick = requestNotificationPermission;
+    document.getElementById("alert-telegram-test").onclick = testTelegram;
 
     document.getElementById("live-add-row").onclick = () => {
       const el = document.getElementById("live-holdings-edit");
@@ -1710,14 +1877,31 @@
       setLiveState(st);
       const el = document.getElementById("live-dashboard");
       if (showSpinner) el.innerHTML = '<div class="card spinner">🔄 הסוכן בודק את התיק שלך...</div>';
+      const alertCfg = saveAlertSettingsFromUI();
+      const previous = liveActive ? getPreviousSnapshot() : null;
       try {
         const r = await fetch("/api/live", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ holdings: st.holdings, cash: st.cash }),
+          body: JSON.stringify({
+            holdings: st.holdings,
+            cash: st.cash,
+            previous,
+            alert_settings: {
+              day_pct: alertCfg.day_pct,
+              pnl_pct: alertCfg.pnl_pct,
+              urgent_only: alertCfg.urgent_only,
+              last_telegram_digest: localStorage.getItem(TG_DIGEST_KEY) || "",
+            },
+            telegram_chat_id: alertCfg.chatId || null,
+            push_telegram: liveActive && alertCfg.telegram && !!alertCfg.chatId,
+          }),
         });
         const d = await r.json();
         if (!r.ok) { el.innerHTML = '<div class="card err">שגיאה בעדכון התיק.</div>'; return; }
+        if (d.alerts && d.alerts.length) pushBrowserAlerts(d.alerts);
+        if (d.telegram_digest) localStorage.setItem(TG_DIGEST_KEY, d.telegram_digest);
+        saveSnapshot(d);
         renderLiveDashboard(d);
       } catch {
         el.innerHTML = '<div class="card err">שגיאת רשת — בדוק חיבור.</div>';
@@ -1757,7 +1941,20 @@
       const bullets = (g.bullets || []).map(b =>
         `<div class="sig"><div class="e">•</div><div class="name">${b}</div></div>`).join("");
 
+      const alertsHtml = (d.alerts || []).length
+        ? `<div class="card">
+            <div class="label">📱 התראות (${d.alerts.length})</div>
+            ${d.alerts.map(a => `
+              <div class="alert-banner ${a.level}">
+                <div class="ab-title">${a.title_he}</div>
+                <div class="ab-body">${a.body_he}</div>
+              </div>`).join("")}
+            ${d.telegram?.ok ? '<div class="summary" style="margin-top:8px;font-size:12px">✅ נשלח ל-Telegram</div>' : ""}
+          </div>`
+        : "";
+
       el.innerHTML = `
+        ${alertsHtml}
         <div class="card">
           <div class="label">${liveBadge} עדכון: ${new Date(d.updated_at).toLocaleString("he-IL")}</div>
           <div class="guardian-box ${mood}">
