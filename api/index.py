@@ -21,6 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from fastapi import FastAPI, Query  # noqa: E402
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 from fastapi.responses import HTMLResponse, JSONResponse  # noqa: E402
+from pydantic import BaseModel, Field  # noqa: E402
 
 from investment_agents.advice import (  # noqa: E402
     action_plan,
@@ -35,14 +36,14 @@ from investment_agents.orchestrator import Committee  # noqa: E402
 from investment_agents.portfolio import backtest_sma_cross  # noqa: E402
 from investment_agents.scanner import agent_roster, scan_market  # noqa: E402
 from investment_agents.tickers import resolve  # noqa: E402
-from investment_agents.universe import SECTOR_NAMES  # noqa: E402
+from investment_agents.watch import HoldingInput, watch_portfolio  # noqa: E402
 
 app = FastAPI(title="Investment Agents API", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_methods=["GET"],
+    allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
 
@@ -292,3 +293,30 @@ def backtest(
             },
         }
     )
+
+
+class LiveHolding(BaseModel):
+    ticker: str
+    shares: float = Field(gt=0)
+    entry_price: float = Field(gt=0)
+
+
+class LivePortfolioRequest(BaseModel):
+    holdings: list[LiveHolding]
+    cash: float = Field(default=0.0, ge=0)
+
+
+@app.post("/api/live")
+def live_portfolio(req: LivePortfolioRequest) -> JSONResponse:
+    """Live guardian: P&L + agent advice for each holding in a real portfolio."""
+    if not req.holdings:
+        return JSONResponse(status_code=400, content={"error": "no_holdings"})
+    if len(req.holdings) > 30:
+        return JSONResponse(status_code=400, content={"error": "too_many_holdings", "max": 30})
+
+    holdings = [
+        HoldingInput(ticker=h.ticker, shares=h.shares, entry_price=h.entry_price)
+        for h in req.holdings
+    ]
+    result = watch_portfolio(_committee, holdings, cash=req.cash)
+    return JSONResponse(content=result)

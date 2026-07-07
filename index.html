@@ -139,6 +139,28 @@
     .broker-row .br-qty { width: 70px; color: var(--accent); font-weight: 700; }
     .broker-row .br-amt { width: 80px; text-align: left; font-variant-numeric: tabular-nums; }
     .broker-hint { font-size: 12px; color: #94a3b8; margin-top: 10px; white-space: pre-line; line-height: 1.5; }
+    /* Live portfolio guardian */
+    .live-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #ef4444; margin-inline-end: 6px; animation: pulse 1.5s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.35} }
+    .guardian-box { border-radius: 10px; padding: 14px 16px; margin-bottom: 12px; }
+    .guardian-box.alert { background: #2a1515; border: 1px solid #7f1d1d; }
+    .guardian-box.caution { background: #2a2010; border: 1px solid #92400e; }
+    .guardian-box.positive { background: #0d1a14; border: 1px solid #2e7d55; }
+    .guardian-box.calm { background: #0b1220; border: 1px solid #334155; }
+    .live-pos { display: grid; grid-template-columns: 1fr auto; gap: 8px; padding: 12px 8px; border-bottom: 1px solid #2b3a52; align-items: start; }
+    .live-pos:last-child { border-bottom: none; }
+    .live-pos .lp-name { font-weight: 700; font-size: 15px; }
+    .live-pos .lp-sub { font-size: 12px; color: #94a3b8; margin-top: 3px; line-height: 1.45; }
+    .live-pos .lp-pnl { text-align: left; font-weight: 800; font-size: 16px; font-variant-numeric: tabular-nums; }
+    .live-pos .lp-day { font-size: 11px; color: #64748b; text-align: left; }
+    .live-action { display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 8px; margin-top: 4px; background: #1e293b; }
+    .live-action.exit { background: #450a0a; color: #fca5a5; }
+    .live-action.add { background: #052e16; color: #86efac; }
+    .live-action.reduce { background: #422006; color: #fcd34d; }
+    .live-holdings-edit input { width: 100%; background: #0b1220; border: 1px solid #334155; color: var(--text); border-radius: 8px; padding: 8px; font-size: 14px; }
+    .live-holdings-edit .lh-row { display: grid; grid-template-columns: 1.2fr 0.7fr 0.8fr 32px; gap: 8px; margin-bottom: 8px; align-items: center; }
+    .live-total { display: flex; flex-wrap: wrap; gap: 16px; font-size: 15px; margin: 10px 0; }
+    .live-total b { font-size: 18px; }
     /* Market scanner */
     .scan-row { display: flex; align-items: center; gap: 12px; padding: 11px 6px; border-bottom: 1px solid #2b3a52; cursor: pointer; border-radius: 8px; transition: .12s; }
     .scan-row:last-child { border-bottom: none; }
@@ -182,6 +204,7 @@
       <button class="tab" id="tab-backtest" onclick="switchTab('backtest')">⏳ בקטסט</button>
       <button class="tab" id="tab-portfolio" onclick="switchTab('portfolio')">💼 בניית תיק</button>
       <button class="tab" id="tab-advisor" onclick="switchTab('advisor')">🧭 תיק חכם</button>
+      <button class="tab" id="tab-live" onclick="switchTab('live')">🔴 תיק חי</button>
       <button class="tab" id="tab-howto" onclick="switchTab('howto')">📚 איך להשקיע</button>
     </div>
 
@@ -348,6 +371,33 @@
       <div id="ad-saved"></div>
     </div>
 
+    <!-- ============ LIVE PORTFOLIO VIEW ============ -->
+    <div id="view-live" class="hidden">
+      <div class="card">
+        <div class="label">🤖 סוכן Guardian — מעקב חי על תיק ההשקעות שלך</div>
+        <div class="summary" style="font-size:13px;margin-bottom:10px">
+          הסוכן עוקב אחרי המניות שלך, מחשב רווח/הפסד, ואומר <b>מתי לצאת, מתי להוסיף ומתי להחזיק</b>.
+          עדכון אוטומטי כל דקה (מחירים + ניתוח הסוכנים).
+        </div>
+        <div class="row" style="flex-wrap:wrap;gap:10px;align-items:flex-end">
+          <div>
+            <div class="label" style="margin:0 0 4px">מזומן בצד ($)</div>
+            <input type="number" id="live-cash" value="0" min="0" step="100" style="width:130px;background:#0b1220;border:1px solid #334155;color:var(--text);border-radius:10px;padding:10px;font-size:16px" />
+          </div>
+          <button class="go alt" id="live-load-last" style="background:#334155">📥 טען מהתיק האחרון</button>
+          <button class="go alt" id="live-load-saved" style="background:#334155">⭐ טען מתיק שמור</button>
+        </div>
+        <div class="label" style="margin-top:14px">החזקות (סימבול · כמות · מחיר כניסה)</div>
+        <div class="live-holdings-edit" id="live-holdings-edit"></div>
+        <button class="go alt" id="live-add-row" style="margin-top:6px;background:#334155">+ הוסף נכס</button>
+        <div class="row" style="margin-top:14px;gap:10px">
+          <button class="go" id="live-start" style="flex:1">🔴 הפעל מעקב חי</button>
+          <button class="go alt" id="live-stop" style="flex:1;background:#450a0a;border-color:#7f1d1d">⏹ עצור</button>
+        </div>
+      </div>
+      <div id="live-dashboard"></div>
+    </div>
+
     <!-- ============ HOW TO INVEST VIEW ============ -->
     <div id="view-howto" class="hidden">
       <div class="card">
@@ -414,11 +464,12 @@
 
     // ---------- tab switching ----------
     function switchTab(name) {
-      ["analyze", "scan", "rank", "backtest", "portfolio", "advisor", "howto"].forEach(v => {
+      ["analyze", "scan", "rank", "backtest", "portfolio", "advisor", "live", "howto"].forEach(v => {
         document.getElementById("view-" + v).classList.toggle("hidden", v !== name);
         document.getElementById("tab-" + v).classList.toggle("active", v === name);
       });
       if (name === "scan") { initScanSectors(); loadAgentBattery(); }
+      if (name === "live") { initLiveTab(); }
     }
 
     // ---------- favorites (saved in the browser) ----------
@@ -845,6 +896,14 @@
         ${renderBrokerHtml(d, "pf")}`;
 
       wireBrokerButtons(d, "pf");
+      el.insertAdjacentHTML("beforeend", `
+        <div class="card"><div class="dl-row">
+          <button class="go alt" id="pf-live" style="border-color:#ef4444;flex:1">🔴 מעקב חי על התיק</button>
+        </div></div>`);
+      document.getElementById("pf-live").onclick = () => {
+        lastPortfolio = { ...d, amount, cash: d.cash, allocations: d.allocations };
+        activateLiveFromPlan({ amount, cash: d.cash, allocations: d.allocations });
+      };
 
       const labels = allocs.map(a => a.ticker).concat(["מזומן"]);
       const values = allocs.map(a => a.amount).concat([d.cash]);
@@ -1174,12 +1233,15 @@
             <button class="go alt" id="ad-save">⭐ שמור את התיק</button>
             <button class="go alt" id="ad-dl">⬇️ הורד תוכנית (קובץ)</button>
             <button class="go alt" id="ad-print">🖨️ הדפס / PDF</button>
+            <button class="go alt" id="ad-live" style="border-color:#ef4444">🔴 מעקב חי על התיק</button>
           </div>
         </div>`;
 
       document.getElementById("ad-save").onclick = savePlan;
       document.getElementById("ad-dl").onclick = downloadPlan;
       document.getElementById("ad-print").onclick = printPlan;
+      const liveBtn = document.getElementById("ad-live");
+      if (liveBtn) liveBtn.onclick = () => activateLiveFromPlan(d);
       wireBrokerButtons(d, "ad");
 
       const labels = allocs.map(a => a.ticker).concat(["מזומן"]);
@@ -1485,6 +1547,193 @@
         yaxis: { color: "#94a3b8", gridcolor: "#273449" },
         font: { color: "#e2e8f0" },
       }, { displayModeBar: false, responsive: true });
+    }
+
+    // ---------- LIVE PORTFOLIO GUARDIAN ----------
+    const LIVE_KEY = "livePortfolio";
+    let liveTimer = null;
+    let liveActive = false;
+
+    function getLiveState() {
+      try { return JSON.parse(localStorage.getItem(LIVE_KEY)) || { cash: 0, holdings: [] }; }
+      catch { return { cash: 0, holdings: [] }; }
+    }
+    function setLiveState(s) {
+      localStorage.setItem(LIVE_KEY, JSON.stringify({ ...s, liveActive }));
+    }
+
+    function readLiveForm() {
+      const cash = parseFloat(document.getElementById("live-cash").value) || 0;
+      const holdings = [];
+      document.querySelectorAll("#live-holdings-edit .lh-row").forEach(row => {
+        const ticker = row.querySelector(".lh-tk").value.trim();
+        const shares = parseFloat(row.querySelector(".lh-sh").value);
+        const entry = parseFloat(row.querySelector(".lh-en").value);
+        if (ticker && shares > 0 && entry > 0) holdings.push({ ticker, shares, entry_price: entry });
+      });
+      return { cash, holdings };
+    }
+
+    function renderLiveEditor(state) {
+      const el = document.getElementById("live-holdings-edit");
+      const rows = (state.holdings && state.holdings.length)
+        ? state.holdings
+        : [{ ticker: "AAPL", shares: 5, entry_price: 180 }];
+      el.innerHTML = rows.map((h, i) => `
+        <div class="lh-row">
+          <input class="lh-tk" list="suggest" placeholder="AAPL / אפל" value="${h.ticker || ""}" />
+          <input class="lh-sh" type="number" step="any" min="0" placeholder="כמות" value="${h.shares || ""}" />
+          <input class="lh-en" type="number" step="any" min="0" placeholder="מחיר כניסה $" value="${h.entry_price || ""}" />
+          <button type="button" class="mini del" onclick="this.closest('.lh-row').remove()">×</button>
+        </div>`).join("");
+      document.getElementById("live-cash").value = state.cash || 0;
+    }
+
+    function planToLiveHoldings(d) {
+      return (d.allocations || []).map(a => {
+        const price = a.price || 1;
+        const shares = a.shares && a.shares > 0 ? a.shares : (price > 0 ? a.amount / price : 1);
+        return { ticker: a.ticker, shares: shares, entry_price: price };
+      }).filter(h => h.ticker && h.entry_price > 0);
+    }
+
+    function activateLiveFromPlan(d) {
+      if (!d || !(d.allocations || []).length) return;
+      const st = { cash: d.cash || 0, holdings: planToLiveHoldings(d) };
+      setLiveState(st);
+      renderLiveEditor(st);
+      switchTab("live");
+      startLive();
+    }
+
+    function initLiveTab() {
+      const st = getLiveState();
+      renderLiveEditor(st);
+      if (st.liveActive) {
+        liveActive = true;
+        refreshLive(true);
+        if (liveTimer) clearInterval(liveTimer);
+        liveTimer = setInterval(() => refreshLive(false), 60000);
+      }
+    }
+
+    document.getElementById("live-add-row").onclick = () => {
+      const el = document.getElementById("live-holdings-edit");
+      el.insertAdjacentHTML("beforeend", `
+        <div class="lh-row">
+          <input class="lh-tk" list="suggest" placeholder="סימבול" />
+          <input class="lh-sh" type="number" step="any" min="0" placeholder="כמות" />
+          <input class="lh-en" type="number" step="any" min="0" placeholder="מחיר $" />
+          <button type="button" class="mini del" onclick="this.closest('.lh-row').remove()">×</button>
+        </div>`);
+    };
+
+    document.getElementById("live-load-last").onclick = () => {
+      if (lastPlan) activateLiveFromPlan(lastPlan);
+      else alert("בנה תיק קודם ב«תיק חכם» או «בניית תיק».");
+    };
+
+    document.getElementById("live-load-saved").onclick = () => {
+      const list = getSaved();
+      if (!list.length) { alert("אין תיקים שמורים."); return; }
+      const names = list.map((x, i) => (i + 1) + ". $" + fmt(x.amount) + " (" + x.date + ")").join("\n");
+      const pick = prompt("בחר מספר תיק:\n" + names, "1");
+      const idx = parseInt(pick, 10) - 1;
+      if (idx >= 0 && idx < list.length) activateLiveFromPlan(list[idx].data);
+    };
+
+    document.getElementById("live-start").onclick = startLive;
+    document.getElementById("live-stop").onclick = stopLive;
+
+    function startLive() {
+      const st = readLiveForm();
+      if (!st.holdings.length) { alert("הוסף לפחות נכס אחד עם כמות ומחיר כניסה."); return; }
+      setLiveState(st);
+      liveActive = true;
+      refreshLive(true);
+      if (liveTimer) clearInterval(liveTimer);
+      liveTimer = setInterval(() => refreshLive(false), 60000);
+    }
+
+    function stopLive() {
+      liveActive = false;
+      const st = readLiveForm();
+      setLiveState({ ...st, liveActive: false });
+      if (liveTimer) { clearInterval(liveTimer); liveTimer = null; }
+      const el = document.getElementById("live-dashboard");
+      if (el) el.insertAdjacentHTML("afterbegin", '<div class="card summary">⏹ המעקב החי הופסק.</div>');
+    }
+
+    async function refreshLive(showSpinner) {
+      const st = readLiveForm();
+      setLiveState(st);
+      const el = document.getElementById("live-dashboard");
+      if (showSpinner) el.innerHTML = '<div class="card spinner">🔄 הסוכן בודק את התיק שלך...</div>';
+      try {
+        const r = await fetch("/api/live", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ holdings: st.holdings, cash: st.cash }),
+        });
+        const d = await r.json();
+        if (!r.ok) { el.innerHTML = '<div class="card err">שגיאה בעדכון התיק.</div>'; return; }
+        renderLiveDashboard(d);
+      } catch {
+        el.innerHTML = '<div class="card err">שגיאת רשת — בדוק חיבור.</div>';
+      }
+    }
+
+    function renderLiveDashboard(d) {
+      const el = document.getElementById("live-dashboard");
+      const g = d.guardian || {};
+      const mood = g.mood || "calm";
+      const pnlCol = d.total_pnl_usd >= 0 ? "#22c55e" : "#f87171";
+      const liveBadge = liveActive ? '<span class="live-dot"></span> LIVE' : '';
+
+      const positions = (d.positions || []).map(p => {
+        const pc = p.pnl_usd >= 0 ? "#22c55e" : "#f87171";
+        const dc = p.day_change_pct != null ? (p.day_change_pct >= 0 ? "#22c55e" : "#f87171") : "#64748b";
+        const ac = p.advice.code;
+        return `
+          <div class="live-pos">
+            <div>
+              <div class="lp-name">${p.emoji} ${p.name_he} <span class="tick">${p.ticker}</span></div>
+              <div class="lp-sub">
+                ${p.shares} יח' · כניסה $${fmt(p.entry_price)} → עכשיו $${fmt(p.current_price)} ·
+                ${p.verdict} (${p.score_pct > 0 ? "+" : ""}${p.score_pct}%)
+              </div>
+              <span class="live-action ${ac}">${p.advice.label_he}</span>
+              <div class="lp-sub">${(p.advice.reasons || []).join(" ")}</div>
+            </div>
+            <div>
+              <div class="lp-pnl" style="color:${pc}">${p.pnl_usd >= 0 ? "+" : ""}$${fmt(p.pnl_usd)}</div>
+              <div class="lp-pnl" style="color:${pc};font-size:13px">${p.pnl_pct >= 0 ? "+" : ""}${p.pnl_pct}%</div>
+              ${p.day_change_pct != null ? `<div class="lp-day" style="color:${dc}">היום: ${p.day_change_pct >= 0 ? "+" : ""}${p.day_change_pct}%</div>` : ""}
+            </div>
+          </div>`;
+      }).join("");
+
+      const bullets = (g.bullets || []).map(b =>
+        `<div class="sig"><div class="e">•</div><div class="name">${b}</div></div>`).join("");
+
+      el.innerHTML = `
+        <div class="card">
+          <div class="label">${liveBadge} עדכון: ${new Date(d.updated_at).toLocaleString("he-IL")}</div>
+          <div class="guardian-box ${mood}">
+            <div style="font-weight:800;font-size:16px;margin-bottom:8px">🤖 Guardian: ${g.headline || ""}</div>
+            ${bullets}
+          </div>
+          <div class="live-total">
+            <span>שווי תיק: <b>$${fmt(d.total_value)}</b></span>
+            <span style="color:${pnlCol}">רווח/הפסד: <b>${d.total_pnl_usd >= 0 ? "+" : ""}$${fmt(d.total_pnl_usd)}</b> (${d.total_pnl_pct >= 0 ? "+" : ""}${d.total_pnl_pct}%)</span>
+            <span>מזומן: $${fmt(d.cash)}</span>
+          </div>
+        </div>
+        <div class="card">
+          <div class="label">📋 נכס-נכס — מה לעשות עכשיו</div>
+          ${positions || '<div class="err">אין החזקות לעקוב.</div>'}
+        </div>
+        <div class="card"><div class="summary">📝 ${d.note}</div></div>`;
     }
 
     // initial load
