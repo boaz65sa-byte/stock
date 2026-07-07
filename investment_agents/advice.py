@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from typing import Iterable
 
+from .broker import enrich_portfolio_result
 from .config import Action, Recommendation
 
 
@@ -284,11 +285,12 @@ def build_advisor(profile: dict, recs: Iterable[Recommendation], amount: float) 
                 "info": CLASS_INFO_HE.get(cls, ""),
             })
 
-    return {
+    result = {
         "amount": amount, "invested": round(invested, 2), "cash": cash,
         "allocations": allocations, "reasoning": reasoning, "glossary": glossary,
         "note": "החלוקה נבנתה מהפרופיל שלך יחד עם הציונים העדכניים של הסוכנים. חומר חינוכי בלבד.",
     }
+    return enrich_portfolio_result(result, profile, recs)
 
 
 def _alloc_why(rec: Recommendation, cls: str) -> str:
@@ -346,6 +348,7 @@ def suggest_allocation(recs: Iterable[Recommendation], amount: float) -> dict:
 
     if total_w <= 0 or amount <= 0:
         return {
+            "amount": round(max(amount, 0.0), 2),
             "invested": 0.0,
             "cash": round(max(amount, 0.0), 2),
             "allocations": [],
@@ -380,10 +383,15 @@ def suggest_allocation(recs: Iterable[Recommendation], amount: float) -> dict:
         "החלוקה משוקללת לפי חוזק האיתות (ציון × ביטחון). "
         "פזר, השקע בהדרגה, וזכור: חומר חינוכי בלבד."
     )
-    return {
-        "invested": round(invested, 2),
-        "cash": cash,
-        "allocations": allocations,
-        "excluded": excluded,
-        "note": note,
-    }
+    return enrich_portfolio_result(
+        {
+            "amount": amount,
+            "invested": round(invested, 2),
+            "cash": cash,
+            "allocations": allocations,
+            "excluded": excluded,
+            "note": note,
+        },
+        {"horizon": "medium", "risk": "medium", "goal": "balanced"},
+        recs,
+    )

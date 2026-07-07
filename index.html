@@ -124,6 +124,21 @@
     table.cmp td:first-child { text-align: right; }
     table.cmp tr.cmp-cash td { color: #94a3b8; border-top: 2px solid #334155; }
     .trend { background: #0b1220; border-radius: 8px; padding: 6px; margin: 0 4px 10px; }
+    /* Profit projection */
+    .proj-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 10px; }
+    @media (max-width: 640px) { .proj-grid { grid-template-columns: 1fr; } }
+    .proj-box { background: #0b1220; border: 1px solid #2b3a52; border-radius: 10px; padding: 12px; text-align: center; }
+    .proj-box.base { border-color: #2e7d55; }
+    .proj-box .pj-label { font-size: 12px; color: #94a3b8; }
+    .proj-box .pj-profit { font-size: 20px; font-weight: 800; margin: 6px 0; }
+    .proj-box .pj-end { font-size: 12px; color: #64748b; }
+    /* Broker export */
+    .broker-row { display: flex; gap: 10px; padding: 8px 4px; border-bottom: 1px solid #2b3a52; font-size: 13px; align-items: center; }
+    .broker-row:last-child { border-bottom: none; }
+    .broker-row .br-tk { flex: 1; font-weight: 700; }
+    .broker-row .br-qty { width: 70px; color: var(--accent); font-weight: 700; }
+    .broker-row .br-amt { width: 80px; text-align: left; font-variant-numeric: tabular-nums; }
+    .broker-hint { font-size: 12px; color: #94a3b8; margin-top: 10px; white-space: pre-line; line-height: 1.5; }
     /* Market scanner */
     .scan-row { display: flex; align-items: center; gap: 12px; padding: 11px 6px; border-bottom: 1px solid #2b3a52; cursor: pointer; border-radius: 8px; transition: .12s; }
     .scan-row:last-child { border-bottom: none; }
@@ -793,6 +808,7 @@
 
     function renderPortfolio(d, amount) {
       const el = document.getElementById("pf-result");
+      lastPortfolio = d;
       const allocs = d.allocations || [];
       const rows = allocs.map(a => `
         <div class="rank-row">
@@ -809,6 +825,7 @@
         ? `<div class="summary" style="color:var(--muted);font-size:13px">לא הוקצה כסף ל: ${d.excluded.join(", ")} (המלצה ניטרלית/שלילית כרגע).</div>` : "";
 
       el.innerHTML = `
+        ${renderProjectionHtml(d)}
         <div class="card">
           <div class="label">💼 חלוקת תיק מוצעת לסכום של $${fmt(amount)}</div>
           <div id="pf-chart"></div>
@@ -824,7 +841,10 @@
           </div>
           <div class="summary" style="margin-top:10px">📝 ${d.note}</div>
           ${skipNote}${excludedNote}
-        </div>`;
+        </div>
+        ${renderBrokerHtml(d, "pf")}`;
+
+      wireBrokerButtons(d, "pf");
 
       const labels = allocs.map(a => a.ticker).concat(["מזומן"]);
       const values = allocs.map(a => a.amount).concat([d.cash]);
@@ -1004,6 +1024,83 @@
     }
 
     let lastPlan = null;
+    let lastPortfolio = null;
+
+    function renderProjectionHtml(d) {
+      const p = d.projection;
+      if (!p || !p.scenarios) return "";
+      const boxes = ["pessimistic", "base", "optimistic"].map(k => {
+        const s = p.scenarios[k];
+        const col = k === "optimistic" ? "#22c55e" : k === "pessimistic" ? "#f87171" : "#38bdf8";
+        const cls = k === "base" ? "proj-box base" : "proj-box";
+        return `<div class="${cls}">
+          <div class="pj-label">${s.label_he}</div>
+          <div class="pj-profit" style="color:${col}">${s.profit >= 0 ? "+" : ""}$${fmt(s.profit)}</div>
+          <div class="pj-end">${s.profit_pct >= 0 ? "+" : ""}${s.profit_pct}% · סה"כ ~$${fmt(s.end_value)}</div>
+          <div class="pj-end">~${s.annual_rate_pct}% בשנה</div>
+        </div>`;
+      }).join("");
+      return `
+        <div class="card">
+          <div class="label">📈 צפי רווח (לפי ${p.horizon_he}, תנאי השוק והפרופיל)</div>
+          <div class="summary-big">${p.summary_he}</div>
+          <div class="proj-grid">${boxes}</div>
+          <div class="summary" style="margin-top:10px;font-size:12px">⚠️ ${p.disclaimer}</div>
+        </div>`;
+    }
+
+    function renderBrokerHtml(d, prefix) {
+      const b = d.broker;
+      if (!b || !b.orders || !b.orders.length) return "";
+      const rows = b.orders.filter(o => o.shares > 0).map(o => {
+        const sh = String(o.ticker).includes("-USD")
+          ? o.shares : Math.floor(o.shares);
+        return `<div class="broker-row">
+          <div class="br-tk">${o.ticker} · ${o.name_he || ""}</div>
+          <div class="br-qty">${sh} יח'</div>
+          <div class="br-amt">$${fmt(o.amount_usd)}</div>
+        </div>`;
+      }).join("");
+      const cashRow = b.cash_usd > 0 ? `<div class="broker-row"><div class="br-tk">💵 מזומן</div><div class="br-qty">—</div><div class="br-amt">$${fmt(b.cash_usd)}</div></div>` : "";
+      return `
+        <div class="card">
+          <div class="label">📲 העברה ל-${b.platform_he || "Dash"} — בלי להקליד ידנית</div>
+          <div class="summary-big" style="font-size:13px;margin-bottom:8px">העתק את התיק בלחיצה והדבק ב-Dash (ייבוא תיק / העתק מסחר). המערכת מחשבת כמות מניות לפי המחיר הנוכחי.</div>
+          ${rows}${cashRow}
+          <div class="dl-row" style="margin-top:12px">
+            <button class="go alt" id="${prefix}-copy-dash">📋 העתק תיק ל-Dash</button>
+            <button class="go alt" id="${prefix}-copy-json">📋 העתק JSON</button>
+            <button class="go alt" id="${prefix}-dl-csv">⬇️ CSV לברוקר</button>
+          </div>
+          <div class="broker-hint">${(b.instructions_he || "").replace(/\\n/g, "<br>")}</div>
+        </div>`;
+    }
+
+    function wireBrokerButtons(d, prefix) {
+      const b = d.broker;
+      if (!b) return;
+      const dashBtn = document.getElementById(prefix + "-copy-dash");
+      const jsonBtn = document.getElementById(prefix + "-copy-json");
+      if (dashBtn) dashBtn.onclick = () => copyText(b.clipboard_text, dashBtn, "✅ הועתק ל-Dash!");
+      if (jsonBtn) jsonBtn.onclick = () => copyText(b.json, jsonBtn, "✅ JSON הועתק!");
+      const csvDl = document.getElementById(prefix + "-dl-csv");
+      if (csvDl) csvDl.onclick = () => {
+        const blob = new Blob(["\uFEFF" + b.csv], { type: "text/csv;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url; a.download = "portfolio-dash.csv"; a.click();
+        URL.revokeObjectURL(url);
+      };
+    }
+
+    async function copyText(text, btn, okMsg) {
+      try {
+        await navigator.clipboard.writeText(text);
+        if (btn) { const o = btn.textContent; btn.textContent = okMsg; setTimeout(() => { btn.textContent = o; }, 1800); }
+      } catch {
+        prompt("העתק ידנית:", text);
+      }
+    }
 
     function renderAdvisor(d) {
       const el = document.getElementById("ad-result");
@@ -1017,7 +1114,7 @@
           <div class="step-body">
             <div class="step-title">קנה ב-<b>$${fmt(a.amount)}</b> (${a.weight_pct}% מהתיק) — ${a.name_he} <span class="tick">${a.ticker}</span></div>
             <div class="step-why">${a.why || a.role_he || ""}</div>
-            ${a.price != null ? `<div class="step-meta">מחיר נוכחי ~$${fmt(a.price)} · ציון סוכנים: ${a.score_pct}%</div>` : ""}
+            ${a.price != null ? `<div class="step-meta">מחיר ~$${fmt(a.price)}${a.shares != null && a.shares > 0 ? ` · כ-${a.shares} יחידות` : ""} · ציון: ${a.score_pct}%</div>` : ""}
           </div>
         </div>`).join("");
 
@@ -1033,6 +1130,8 @@
           </div>
           <div class="summary-big" style="color:#94a3b8;font-size:13px;margin-top:6px">בצע לפי הסדר הבא (מהגדול לקטן). מומלץ לפצל כל קנייה לכמה מנות לאורך חודש-חודשיים.</div>
         </div>
+
+        ${renderProjectionHtml(d)}
 
         <div class="card">
           <div class="label">🛒 רשימת הקניות — שלב אחר שלב</div>
@@ -1067,6 +1166,8 @@
             </div>`).join("")}
         </div>` : ""}
 
+        ${renderBrokerHtml(d, "ad")}
+
         <div class="card">
           <div class="label">💾 שמירה והורדה</div>
           <div class="dl-row">
@@ -1079,6 +1180,7 @@
       document.getElementById("ad-save").onclick = savePlan;
       document.getElementById("ad-dl").onclick = downloadPlan;
       document.getElementById("ad-print").onclick = printPlan;
+      wireBrokerButtons(d, "ad");
 
       const labels = allocs.map(a => a.ticker).concat(["מזומן"]);
       const values = allocs.map(a => a.amount).concat([d.cash]);
@@ -1114,6 +1216,21 @@
         lines.push("   למה: " + (a.why || a.role_he || ""));
       });
       lines.push("💵 להשאיר במזומן: $" + fmt(d.cash));
+      if (d.projection && d.projection.scenarios) {
+        lines.push("");
+        lines.push("צפי רווח (" + d.projection.horizon_he + "):");
+        ["pessimistic", "base", "optimistic"].forEach(k => {
+          const s = d.projection.scenarios[k];
+          lines.push("  " + s.label_he + ": $" + fmt(s.profit) + " (" + s.profit_pct + "%)");
+        });
+      }
+      if (d.broker && d.broker.orders) {
+        lines.push("");
+        lines.push("פקודות ל-Dash:");
+        d.broker.orders.filter(o => o.shares > 0).forEach(o => {
+          lines.push("  " + o.ticker + " | " + o.shares + " יח' | $" + fmt(o.amount_usd));
+        });
+      }
       lines.push("");
       lines.push("למה התיק הזה:");
       (d.reasoning || []).forEach(x => lines.push("- " + x));
