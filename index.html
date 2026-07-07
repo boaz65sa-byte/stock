@@ -161,6 +161,19 @@
     .live-holdings-edit .lh-row { display: grid; grid-template-columns: 1.2fr 0.7fr 0.8fr 32px; gap: 8px; margin-bottom: 8px; align-items: center; }
     .live-total { display: flex; flex-wrap: wrap; gap: 16px; font-size: 15px; margin: 10px 0; }
     .live-total b { font-size: 18px; }
+    /* AI personal advisor chat */
+    .chat-wrap { display: flex; flex-direction: column; height: min(520px, 65vh); }
+    .chat-msgs { flex: 1; overflow-y: auto; padding: 12px 8px; display: flex; flex-direction: column; gap: 12px; }
+    .chat-msg { max-width: 88%; padding: 12px 14px; border-radius: 14px; line-height: 1.55; font-size: 14px; white-space: pre-wrap; }
+    .chat-msg.user { align-self: flex-start; background: #1e3a5f; border: 1px solid #334155; }
+    .chat-msg.bot { align-self: flex-end; background: #0d1a14; border: 1px solid #2e7d55; }
+    .chat-msg .cm-name { font-size: 11px; color: #94a3b8; margin-bottom: 4px; font-weight: 700; }
+    .chat-input-row { display: flex; gap: 8px; margin-top: 10px; }
+    .chat-input-row input { flex: 1; background: #0b1220; border: 1px solid #334155; color: var(--text); border-radius: 10px; padding: 12px 14px; font-size: 15px; }
+    .chat-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+    .chat-chip { background: #1e293b; border: 1px solid #334155; color: #cbd5e1; border-radius: 20px; padding: 6px 14px; font-size: 12px; cursor: pointer; }
+    .chat-chip:hover { border-color: var(--accent); color: #fff; }
+    .chat-ctx { font-size: 12px; color: #64748b; margin-bottom: 8px; }
     /* Market scanner */
     .scan-row { display: flex; align-items: center; gap: 12px; padding: 11px 6px; border-bottom: 1px solid #2b3a52; cursor: pointer; border-radius: 8px; transition: .12s; }
     .scan-row:last-child { border-bottom: none; }
@@ -205,6 +218,7 @@
       <button class="tab" id="tab-portfolio" onclick="switchTab('portfolio')">💼 בניית תיק</button>
       <button class="tab" id="tab-advisor" onclick="switchTab('advisor')">🧭 תיק חכם</button>
       <button class="tab" id="tab-live" onclick="switchTab('live')">🔴 תיק חי</button>
+      <button class="tab" id="tab-aichat" onclick="switchTab('aichat')">🤖 יועץ AI</button>
       <button class="tab" id="tab-howto" onclick="switchTab('howto')">📚 איך להשקיע</button>
     </div>
 
@@ -398,6 +412,32 @@
       <div id="live-dashboard"></div>
     </div>
 
+    <!-- ============ AI PERSONAL ADVISOR ============ -->
+    <div id="view-aichat" class="hidden">
+      <div class="card">
+        <div class="label">🤖 אלי — יועץ ההשקעות AI האישי שלך</div>
+        <div class="summary" style="font-size:13px;margin-bottom:8px">
+          שאל אותי הכל: מה לקנות, מתי לצאת, איך לפזר, מה קורה עם התיק שלך.
+          אני רואה את <b>הפרופיל</b> ואת <b>התיק החי</b> שלך (אם הגדרת) ומשלב את ניתוח הסוכנים.
+        </div>
+        <div class="chat-ctx" id="ai-ctx">טוען הקשר...</div>
+        <div class="chat-chips" id="ai-chips">
+          <button class="chat-chip" data-q="מה לעשות עם התיק שלי עכשיו?">מה לעשות עכשיו?</button>
+          <button class="chat-chip" data-q="האם כדאי לקנות עוד או להמתין?">לקנות או להמתין?</button>
+          <button class="chat-chip" data-q="מתי כדאי לצאת מהנכסים החלשים?">מתי לצאת?</button>
+          <button class="chat-chip" data-q="איך לפזר סיכונים נכון בתיק?">איך לפזר?</button>
+          <button class="chat-chip" data-q="תסביר לי את המצב בשוק בפשטות">מצב השוק</button>
+        </div>
+        <div class="chat-wrap">
+          <div class="chat-msgs" id="ai-msgs"></div>
+          <div class="chat-input-row">
+            <input type="text" id="ai-input" placeholder="שאל את אלי... (למשל: האם לצאת מאפל?)" />
+            <button class="go" id="ai-send">שלח</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- ============ HOW TO INVEST VIEW ============ -->
     <div id="view-howto" class="hidden">
       <div class="card">
@@ -464,12 +504,13 @@
 
     // ---------- tab switching ----------
     function switchTab(name) {
-      ["analyze", "scan", "rank", "backtest", "portfolio", "advisor", "live", "howto"].forEach(v => {
+      ["analyze", "scan", "rank", "backtest", "portfolio", "advisor", "live", "aichat", "howto"].forEach(v => {
         document.getElementById("view-" + v).classList.toggle("hidden", v !== name);
         document.getElementById("tab-" + v).classList.toggle("active", v === name);
       });
       if (name === "scan") { initScanSectors(); loadAgentBattery(); }
       if (name === "live") { initLiveTab(); }
+      if (name === "aichat") { initAiChat(); }
     }
 
     // ---------- favorites (saved in the browser) ----------
@@ -1734,6 +1775,124 @@
           ${positions || '<div class="err">אין החזקות לעקוב.</div>'}
         </div>
         <div class="card"><div class="summary">📝 ${d.note}</div></div>`;
+    }
+
+    // ---------- AI PERSONAL ADVISOR CHAT ----------
+    const CHAT_KEY = "aiAdvisorChat";
+    let aiHistory = [];
+    let aiInited = false;
+
+    function getAiContext() {
+      const profile = (lastPlan && lastPlan.profile) || null;
+      const live = getLiveState();
+      const portfolio = (live.holdings && live.holdings.length)
+        ? { cash: live.cash || 0, holdings: live.holdings }
+        : null;
+      return { profile, portfolio };
+    }
+
+    function describeAiContext() {
+      const { profile, portfolio } = getAiContext();
+      const parts = [];
+      if (profile) {
+        const g = { growth: "צמיחה", balanced: "מאוזן", preserve: "שימור" }[profile.goal] || "";
+        parts.push("פרופיל: " + g);
+      }
+      if (portfolio) parts.push("תיק חי: " + portfolio.holdings.length + " נכסים");
+      if (!parts.length) parts.push("אין עדיין פרופיל/תיק — שאל כל שאלה, או בנה תיק ב«תיק חכם»");
+      return "היועץ רואה: " + parts.join(" · ");
+    }
+
+    function loadChatHistory() {
+      try { aiHistory = JSON.parse(localStorage.getItem(CHAT_KEY)) || []; } catch { aiHistory = []; }
+    }
+    function saveChatHistory() {
+      localStorage.setItem(CHAT_KEY, JSON.stringify(aiHistory.slice(-40)));
+    }
+
+    function appendChatMsg(role, content, name) {
+      const el = document.getElementById("ai-msgs");
+      const div = document.createElement("div");
+      div.className = "chat-msg " + (role === "user" ? "user" : "bot");
+      div.innerHTML = (name ? `<div class="cm-name">${name}</div>` : "") + escapeHtml(content);
+      el.appendChild(div);
+      el.scrollTop = el.scrollHeight;
+    }
+
+    function escapeHtml(s) {
+      return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+    }
+
+    function renderChatHistory() {
+      const el = document.getElementById("ai-msgs");
+      el.innerHTML = "";
+      aiHistory.forEach(m => appendChatMsg(m.role, m.content, m.role === "assistant" ? "🤖 אלי" : "אתה"));
+    }
+
+    async function initAiChat() {
+      document.getElementById("ai-ctx").textContent = describeAiContext();
+      if (!aiInited) {
+        loadChatHistory();
+        document.querySelectorAll(".chat-chip").forEach(chip => {
+          chip.onclick = () => { document.getElementById("ai-input").value = chip.dataset.q; sendAiMessage(); };
+        });
+        document.getElementById("ai-send").onclick = sendAiMessage;
+        document.getElementById("ai-input").onkeydown = e => { if (e.key === "Enter") sendAiMessage(); };
+        aiInited = true;
+      }
+      if (!aiHistory.length) {
+        try {
+          const st = await (await fetch("/api/advisor/status")).json();
+          const greet = st.enabled
+            ? "שלום! אני אלי, יועץ ההשקעות AI האישי שלך 🤝\n\nאני רואה את הפרופיל והתיק שלך (אם הגדרת), ומשלב את כל הסוכנים.\n\nשאל אותי: «מה לעשות עכשיו?», «האם לצאת מ…?», «איך לפזר?» — ואענה בעברית פשוטה."
+            : "שלום! אני אלי — כרגע לא מחובר ל-OpenAI.\n\nהוסף OPENAI_API_KEY ב-Vercel או ב-.env כדי שאוכל לענות בצ'אט.\n\nבינתיים: «תיק חכם», «סריקת שוק» ו«תיק חי» עובדים בלי AI.";
+          aiHistory.push({ role: "assistant", content: greet });
+          saveChatHistory();
+        } catch {}
+      }
+      renderChatHistory();
+    }
+
+    async function sendAiMessage() {
+      const inp = document.getElementById("ai-input");
+      const msg = inp.value.trim();
+      if (!msg) return;
+      inp.value = "";
+      const btn = document.getElementById("ai-send");
+      btn.disabled = true;
+
+      aiHistory.push({ role: "user", content: msg });
+      appendChatMsg("user", msg, "אתה");
+      saveChatHistory();
+
+      appendChatMsg("assistant", "⏳ חושב...", "🤖 אלי");
+      const thinking = document.getElementById("ai-msgs").lastChild;
+
+      const ctx = getAiContext();
+      try {
+        const r = await fetch("/api/advisor/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            message: msg,
+            history: aiHistory.slice(0, -1),
+            profile: ctx.profile,
+            portfolio: ctx.portfolio,
+          }),
+        });
+        const d = await r.json();
+        thinking.remove();
+        const reply = d.reply || "לא התקבלה תשובה.";
+        aiHistory.push({ role: "assistant", content: reply });
+        appendChatMsg("assistant", reply, "🤖 " + (d.advisor_name || "אלי"));
+        saveChatHistory();
+      } catch {
+        thinking.remove();
+        appendChatMsg("assistant", "שגיאת רשת — נסה שוב.", "🤖 אלי");
+      } finally {
+        btn.disabled = false;
+        inp.focus();
+      }
     }
 
     // initial load

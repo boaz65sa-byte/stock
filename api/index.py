@@ -36,6 +36,7 @@ from investment_agents.orchestrator import Committee  # noqa: E402
 from investment_agents.portfolio import backtest_sma_cross  # noqa: E402
 from investment_agents.scanner import agent_roster, scan_market  # noqa: E402
 from investment_agents.tickers import resolve  # noqa: E402
+from investment_agents.personal_advisor import ADVISOR_NAME, chat as advisor_chat  # noqa: E402
 from investment_agents.watch import HoldingInput, watch_portfolio  # noqa: E402
 
 app = FastAPI(title="Investment Agents API", version="1.0.0")
@@ -319,4 +320,41 @@ def live_portfolio(req: LivePortfolioRequest) -> JSONResponse:
         for h in req.holdings
     ]
     result = watch_portfolio(_committee, holdings, cash=req.cash)
+    return JSONResponse(content=result)
+
+
+class ChatTurn(BaseModel):
+    role: str
+    content: str
+
+
+class AdvisorChatRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=2000)
+    history: list[ChatTurn] = Field(default_factory=list)
+    profile: dict | None = None
+    portfolio: dict | None = None
+
+
+@app.get("/api/advisor/status")
+def advisor_status() -> JSONResponse:
+    return JSONResponse(
+        content={
+            "enabled": settings.llm_enabled,
+            "advisor_name": ADVISOR_NAME,
+            "model": settings.openai_model if settings.llm_enabled else None,
+        }
+    )
+
+
+@app.post("/api/advisor/chat")
+def personal_advisor_chat(req: AdvisorChatRequest) -> JSONResponse:
+    """Personal AI advisor — Hebrew chat with portfolio + profile context."""
+    hist = [{"role": t.role, "content": t.content} for t in req.history[-10:]]
+    result = advisor_chat(
+        _committee,
+        req.message.strip(),
+        hist,
+        profile=req.profile,
+        portfolio=req.portfolio,
+    )
     return JSONResponse(content=result)
