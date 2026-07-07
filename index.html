@@ -124,6 +124,28 @@
     table.cmp td:first-child { text-align: right; }
     table.cmp tr.cmp-cash td { color: #94a3b8; border-top: 2px solid #334155; }
     .trend { background: #0b1220; border-radius: 8px; padding: 6px; margin: 0 4px 10px; }
+    /* Market scanner */
+    .scan-row { display: flex; align-items: center; gap: 12px; padding: 11px 6px; border-bottom: 1px solid #2b3a52; cursor: pointer; border-radius: 8px; transition: .12s; }
+    .scan-row:last-child { border-bottom: none; }
+    .scan-row:hover { background: #172033; }
+    .scan-rank { flex: 0 0 26px; width: 26px; height: 26px; border-radius: 50%; background: #1e293b; color: #94a3b8; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px; }
+    .scan-main { flex: 1; min-width: 0; }
+    .scan-name { font-weight: 700; font-size: 15px; }
+    .scan-sub { color: #94a3b8; font-size: 12px; margin-top: 2px; }
+    .scan-score { text-align: left; font-weight: 800; font-size: 17px; font-variant-numeric: tabular-nums; }
+    .scan-vd { font-size: 11px; font-weight: 500; color: #94a3b8; }
+    /* Agent battery */
+    .agent-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
+    .agent-card { background: #0b1220; border: 1px solid #2b3a52; border-radius: 10px; padding: 10px 12px; }
+    .agent-card .ag-name { font-weight: 700; font-size: 13px; color: #e2e8f0; }
+    .agent-card .ag-role { color: var(--accent); font-size: 11px; margin-top: 2px; }
+    .agent-card .ag-desc { color: #94a3b8; font-size: 11px; margin-top: 4px; line-height: 1.4; }
+    .sector-bar { display: flex; align-items: center; gap: 10px; padding: 6px 4px; border-bottom: 1px solid #2b3a52; font-size: 13px; }
+    .sector-bar:last-child { border-bottom: none; }
+    .sector-bar .sb-name { flex: 1; }
+    .sector-bar .sb-score { font-weight: 700; font-variant-numeric: tabular-nums; width: 48px; text-align: left; }
+    .sector-bar .sb-track { flex: 2; background: #0b1220; border-radius: 4px; height: 8px; overflow: hidden; }
+    .sector-bar .sb-fill { height: 100%; border-radius: 4px; }
     .opts { display: flex; flex-wrap: wrap; gap: 8px; }
     .opt {
       background: var(--card2); border: 1px solid #334155; color: var(--text);
@@ -140,6 +162,7 @@
 
     <div class="tabs">
       <button class="tab active" id="tab-analyze" onclick="switchTab('analyze')">🔍 בדיקת נכס</button>
+      <button class="tab" id="tab-scan" onclick="switchTab('scan')">📡 סריקת שוק</button>
       <button class="tab" id="tab-rank" onclick="switchTab('rank')">🏆 השוואת נכסים</button>
       <button class="tab" id="tab-backtest" onclick="switchTab('backtest')">⏳ בקטסט</button>
       <button class="tab" id="tab-portfolio" onclick="switchTab('portfolio')">💼 בניית תיק</button>
@@ -171,6 +194,30 @@
         </div>
       </div>
       <div id="result"></div>
+    </div>
+
+    <!-- ============ SCAN VIEW ============ -->
+    <div id="view-scan" class="hidden">
+      <div class="card">
+        <div class="label">🤖 סוללת הסוכנים שלך</div>
+        <div class="summary" style="margin-bottom:10px;font-size:13px">כל סוכן מתמחה בזווית אחרת. יחד הם סורקים את הבורסה, מדרגים נכסים, ומכוונים אותך לאן ומה להשקיע.</div>
+        <div class="agent-grid" id="scan-agents"><div class="summary">טוען סוכנים...</div></div>
+      </div>
+      <div class="card">
+        <div class="label">📡 סריקת שוק — מצא הזדמנויות</div>
+        <div class="q"><div class="label">מגזר לסריקה</div>
+          <div class="opts" id="scan-sector" data-val=""></div>
+        </div>
+        <div class="q"><div class="label">כמה הזדמנויות להציג</div>
+          <div class="opts" id="scan-top" data-val="12">
+            <button class="opt" data-v="8">8</button>
+            <button class="opt on" data-v="12">12</button>
+            <button class="opt" data-v="20">20</button>
+          </div>
+        </div>
+        <button class="go" id="scan-go" style="width:100%">📡 סרוק את השוק עכשיו</button>
+      </div>
+      <div id="scan-result"></div>
     </div>
 
     <!-- ============ RANK VIEW ============ -->
@@ -352,10 +399,11 @@
 
     // ---------- tab switching ----------
     function switchTab(name) {
-      ["analyze", "rank", "backtest", "portfolio", "advisor", "howto"].forEach(v => {
+      ["analyze", "scan", "rank", "backtest", "portfolio", "advisor", "howto"].forEach(v => {
         document.getElementById("view-" + v).classList.toggle("hidden", v !== name);
         document.getElementById("tab-" + v).classList.toggle("active", v === name);
       });
+      if (name === "scan") { initScanSectors(); loadAgentBattery(); }
     }
 
     // ---------- favorites (saved in the browser) ----------
@@ -801,6 +849,127 @@
         };
       });
     });
+
+    // ---------- market scanner ----------
+    let scanSectorsLoaded = false;
+    let agentsLoaded = false;
+
+    async function loadAgentBattery() {
+      if (agentsLoaded) return;
+      const el = document.getElementById("scan-agents");
+      try {
+        const agents = (await (await fetch("/api/agents")).json()).agents || [];
+        el.innerHTML = agents.map(a => `
+          <div class="agent-card">
+            <div class="ag-name">${a.name}</div>
+            <div class="ag-role">${a.role_he}</div>
+            <div class="ag-desc">${a.desc_he}</div>
+          </div>`).join("");
+        agentsLoaded = true;
+      } catch {
+        el.innerHTML = '<div class="summary">לא ניתן לטעון את רשימת הסוכנים.</div>';
+      }
+    }
+
+    document.querySelectorAll("#view-scan .opts").forEach(group => {
+      group.querySelectorAll(".opt").forEach(btn => {
+        btn.onclick = () => {
+          group.querySelectorAll(".opt").forEach(b => b.classList.remove("on"));
+          btn.classList.add("on");
+          group.dataset.val = btn.dataset.v;
+        };
+      });
+    });
+
+    async function initScanSectors() {
+      if (scanSectorsLoaded) return;
+      const group = document.getElementById("scan-sector");
+      let sectors = [];
+      try { sectors = (await (await fetch("/api/sectors")).json()).sectors || []; } catch {}
+      const btns = ['<button class="opt on" data-v="">כל השוק</button>']
+        .concat(sectors.map(s => `<button class="opt" data-v="${s}">${s}</button>`));
+      group.innerHTML = btns.join("");
+      group.querySelectorAll(".opt").forEach(btn => {
+        btn.onclick = () => {
+          group.querySelectorAll(".opt").forEach(b => b.classList.remove("on"));
+          btn.classList.add("on");
+          group.dataset.val = btn.dataset.v;
+        };
+      });
+      scanSectorsLoaded = true;
+    }
+
+    const scanGoBtn = document.getElementById("scan-go");
+    scanGoBtn.onclick = runScan;
+
+    async function runScan() {
+      const sector = document.getElementById("scan-sector").dataset.val || "";
+      const top = document.getElementById("scan-top").dataset.val || "12";
+      const el = document.getElementById("scan-result");
+      scanGoBtn.disabled = true;
+      el.innerHTML = '<div class="card spinner">📡 הסוכנים סורקים את הבורסה... (זה עשוי לקחת מספר שניות)</div>';
+      try {
+        const url = `/api/scan?sector=${encodeURIComponent(sector)}&top=${top}`;
+        const r = await fetch(url);
+        const d = await r.json();
+        if (!r.ok) { el.innerHTML = '<div class="card err">שגיאה בסריקה. נסה שוב.</div>'; return; }
+        renderScan(d);
+      } catch (err) {
+        el.innerHTML = '<div class="card err">שגיאת רשת. נסה שוב.</div>';
+      } finally {
+        scanGoBtn.disabled = false;
+      }
+    }
+
+    function renderScan(d) {
+      const el = document.getElementById("scan-result");
+      const list = d.top || [];
+      if (!list.length) { el.innerHTML = '<div class="card err">לא נמצאו נתונים לסריקה.</div>'; return; }
+
+      const guidance = (d.guidance || []).map(g =>
+        `<div class="sig"><div class="e">•</div><div class="name">${g}</div></div>`).join("");
+
+      const sectors = (d.sector_ranking || []).map(s => {
+        const pct = Math.min(100, Math.max(0, (s.avg_score_pct + 50)));
+        const col = s.avg_score_pct >= 15 ? "#22c55e" : s.avg_score_pct >= 0 ? "#f1c40f" : "#f87171";
+        return `<div class="sector-bar">
+          <div class="sb-name">${s.sector}</div>
+          <div class="sb-track"><div class="sb-fill" style="width:${pct}%;background:${col}"></div></div>
+          <div class="sb-score" style="color:${col}">${s.avg_score_pct > 0 ? "+" : ""}${s.avg_score_pct}%</div>
+        </div>`;
+      }).join("");
+
+      const rows = list.map((o, i) => `
+        <div class="scan-row" onclick="scanInspect('${o.ticker}')">
+          <div class="scan-rank">${i + 1}</div>
+          <div class="scan-main">
+            <div class="scan-name">${o.emoji} ${o.name_he} <span class="tick">${o.ticker}</span></div>
+            <div class="scan-sub">${o.sector} · ${o.headline}</div>
+          </div>
+          <div class="scan-score" style="color:${o.color}">${o.score_pct > 0 ? "+" : ""}${o.score_pct}%<div class="scan-vd">${o.verdict}</div></div>
+        </div>`).join("");
+
+      el.innerHTML = `
+        <div class="card advisor-top">
+          <div class="label">🎯 איפה ומה להשקיע — סיכום הסוכנים</div>
+          ${guidance}
+        </div>
+        ${sectors ? `<div class="card"><div class="label">📊 חוזק מגזרים (ממוצע ציון הסוכנים)</div>${sectors}</div>` : ""}
+        <div class="card">
+          <div class="label">📡 הזדמנויות מובילות — ${d.sector}</div>
+          <div class="summary-big" style="margin-bottom:8px">נסרקו <b>${d.scanned}</b> נכסים · <b>${d.buy_count}</b> באיתות חיובי · לחץ על נכס לניתוח מלא</div>
+          ${rows}
+        </div>
+        <div class="card"><div class="summary">📝 ${d.note}</div></div>`;
+    }
+
+    function scanInspect(ticker) {
+      switchTab("analyze");
+      const inp = document.getElementById("ticker");
+      if (inp) inp.value = ticker;
+      analyze();
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
 
     const adGoBtn = document.getElementById("ad-go");
     adGoBtn.onclick = buildAdvisor;

@@ -29,6 +29,8 @@ from .config import Action, Recommendation, settings
 from .explain import explain_recommendation
 from .orchestrator import Committee
 from .portfolio import Portfolio, backtest_sma_cross, rebalance_with_committee
+from .scanner import scan_market
+from .universe import SECTOR_NAMES, get_universe
 
 console = Console()
 
@@ -165,12 +167,50 @@ def cmd_paper(args: argparse.Namespace) -> None:
     )
 
 
+def cmd_scan(args: argparse.Namespace) -> None:
+    """Market scanner: sweep the universe and rank opportunities."""
+    committee = Committee()
+    sector = args.sector if args.sector in SECTOR_NAMES else None
+    label = sector or "כל השוק"
+    with console.status(f"📡 הסוכנים סורקים את {label}..."):
+        result = scan_market(committee, sector=sector, top=args.top)
+
+    console.print(
+        Panel(
+            "\n".join(f"• {g}" for g in result["guidance"]),
+            title=f"📡 סריקת שוק — {result['sector']} ({result['scanned']} נכסים)",
+            border_style="cyan",
+        )
+    )
+
+    table = Table(title="הזדמנויות מובילות", header_style="bold cyan")
+    table.add_column("#", justify="right")
+    table.add_column("נכס")
+    table.add_column("מגזר")
+    table.add_column("ציון", justify="right")
+    table.add_column("פעולה")
+    for i, o in enumerate(result["top"], 1):
+        table.add_row(
+            str(i),
+            f"{o['emoji']} {o['name_he']} ({o['ticker']})",
+            o["sector"],
+            f"{o['score_pct']:+d}%",
+            o["verdict"],
+        )
+    console.print(table)
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="investment_agents",
         description="Multi-agent investment analysis (research/education only).",
     )
     sub = p.add_subparsers(dest="command", required=True)
+
+    sc = sub.add_parser("scan", help="Scan the market with all agents")
+    sc.add_argument("--sector", default="", help="Hebrew sector name (empty = all)")
+    sc.add_argument("--top", type=int, default=12)
+    sc.set_defaults(func=cmd_scan)
 
     s = sub.add_parser("simple", help="Beginner-friendly plain-Hebrew verdict")
     s.add_argument("tickers", nargs="+")

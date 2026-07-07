@@ -58,7 +58,10 @@ class Committee:
         return self.analyze_asset(get_asset(ticker, with_info=with_info))
 
     def rank(
-        self, tickers: list[str], with_info: bool = True
+        self,
+        tickers: list[str],
+        with_info: bool = True,
+        max_workers: Optional[int] = None,
     ) -> list[Recommendation]:
         """Analyze many tickers and return them sorted best-first.
 
@@ -76,8 +79,9 @@ class Committee:
             except Exception:
                 return None
 
-        max_workers = min(8, len(tickers))
-        with ThreadPoolExecutor(max_workers=max_workers) as ex:
+        cap = max_workers if max_workers else 8
+        workers = min(cap, len(tickers))
+        with ThreadPoolExecutor(max_workers=workers) as ex:
             for rec in ex.map(_safe, tickers):
                 if rec is not None:
                     recs.append(rec)

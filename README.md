@@ -15,12 +15,15 @@
 - **נתונים חינמיים** דרך `yfinance` — אין צורך במפתח API כדי להתחיל.
 - **חיפוש בעברית:** אפשר להקליד שם בעברית (למשל "טסלה", "נאסד\"ק", "זהב") והמערכת ממירה אוטומטית לסימבול. חברות פרטיות (כמו Anthropic) מזוהות ומקבלות הודעה מתאימה. ראה `investment_agents/tickers.py`.
 - **שווקים נתמכים:** מניות ארה"ב (`AAPL`), מניות ישראל (`TEVA.TA`), קריפטו (`BTC-USD`), מדדים וקרנות סל (`SPY`, `QQQ`, `DIA`, `^TA125.TA`), וסחורות (`GC=F` זהב, `CL=F` נפט).
-- **ועדת סוכנים:**
+- **ועדת סוכנים (סוללה):**
   - `Technical Analyst` — RSI, ממוצעים נעים (SMA50/200), MACD.
   - `Momentum Trader` — תשואות מגמה ל‑1/3/6 חודשים.
   - `Value Investor` — מכפיל רווח (P/E), PEG, רווחיות, צמיחה.
   - `Risk Manager` — תנודתיות, ירידה מקסימלית (drawdown), יחס שארפ.
+  - `Sector Trend Scout` — חוזק יחסי מול מדד S&P 500 (מי חזק יותר מהשוק).
+  - `Opportunity Scout` — מחפש הזדמנויות כניסה (דיפ, פריצה, תנועה מוגזמת).
   - `AI Analyst` (אופציונלי) — נדלק אוטומטית אם מוגדר `OPENAI_API_KEY`.
+- **סריקת שוק:** סוללת הסוכנים סורקת ~80 נכסים (מניות, מדדים, סחורות, קריפטו, ישראל) לפי מגזר, מדרגת הזדמנויות, ומכוונת **איפה ומה** להשקיע.
 - **מסחר וירטואלי (Paper trading)** — תיק דמה שמבצע קניות/מכירות לפי ההמלצות.
 - **בקטסטינג** — סימולציה היסטורית של אסטרטגיית חציית ממוצעים נעים.
 - **שלושה ממשקים:** אתר ווב (FastAPI + HTML, מתאים לפריסה ב‑Vercel), שורת פקודה (CLI), ודשבורד מקומי (Streamlit).
@@ -68,6 +71,8 @@ uvicorn api.index:app --reload
 נקודות קצה של ה‑API:
 - `GET /api/analyze?ticker=AAPL&period=1y`
 - `GET /api/rank?tickers=AAPL,MSFT,BTC-USD`
+- `GET /api/scan?sector=טכנולוגיה&top=12` — סריקת שוק
+- `GET /api/agents` — רשימת סוללת הסוכנים
 - `GET /api/health`
 
 ---
@@ -83,6 +88,10 @@ python -m investment_agents.cli analyze AAPL MSFT
 
 # דירוג נכסים מהטוב לפחות טוב
 python -m investment_agents.cli rank AAPL MSFT NVDA SPY BTC-USD --top 5
+
+# סריקת שוק — כל הסוכנים סורקים מגזר או את כל השוק
+python -m investment_agents.cli scan --top 12
+python -m investment_agents.cli scan --sector "טכנולוגיה" --top 8
 
 # בקטסט של אסטרטגיית חציית ממוצעים נעים
 python -m investment_agents.cli backtest AAPL --fast 20 --slow 50

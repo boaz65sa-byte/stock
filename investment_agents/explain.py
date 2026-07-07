@@ -50,6 +50,20 @@ AGENT_ROLE_HE: dict[str, str] = {
     "Value Investor": "כמה החברה שווה מול הרווח שלה",
     "Risk Manager": "רמת הסיכון",
     "AI Analyst": "דעת הבינה המלאכותית",
+    "Sector Trend Scout": "חוזק יחסית לשוק",
+    "Opportunity Scout": "הזדמנויות כניסה",
+}
+
+
+# Longer one-line description for the agent battery UI.
+AGENT_DESC_HE: dict[str, str] = {
+    "Technical Analyst": "בודק RSI, ממוצעים נעים ו-MACD — האם הגרף עולה או יורד?",
+    "Momentum Trader": "מודד כמה הנכס עלה או ירד בחודש, 3 חודשים ו-6 חודשים.",
+    "Value Investor": "בודק האם המניה יקרה או זולה יחסית לרווחים ולצמיחה.",
+    "Risk Manager": "מודד תנודתיות, ירידות חדות ויחס שארפ — כמה מסוכן הנכס.",
+    "Sector Trend Scout": "משווה את הנכס למדד S&P 500 — האם הוא חזק יותר מהשוק?",
+    "Opportunity Scout": "מחפש הזדמנויות כניסה: דיפ לקנייה, פריצה, או תנועה מוגזמת.",
+    "AI Analyst": "מנתח את הנתונים בשפה טבעית ומוסיף זווית נוספת.",
 }
 
 

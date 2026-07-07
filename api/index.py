@@ -33,7 +33,9 @@ from investment_agents.data import get_asset  # noqa: E402
 from investment_agents.explain import explain_recommendation  # noqa: E402
 from investment_agents.orchestrator import Committee  # noqa: E402
 from investment_agents.portfolio import backtest_sma_cross  # noqa: E402
+from investment_agents.scanner import agent_roster, scan_market  # noqa: E402
 from investment_agents.tickers import resolve  # noqa: E402
+from investment_agents.universe import SECTOR_NAMES  # noqa: E402
 
 app = FastAPI(title="Investment Agents API", version="1.0.0")
 
@@ -64,6 +66,30 @@ def home() -> HTMLResponse:
 @app.get("/api/health")
 def health() -> dict:
     return {"ok": True, "llm_enabled": settings.llm_enabled}
+
+
+@app.get("/api/agents")
+def agents() -> JSONResponse:
+    """List every agent in the battery with Hebrew role descriptions."""
+    return JSONResponse(content={"agents": agent_roster(_committee)})
+
+
+@app.get("/api/sectors")
+def sectors() -> JSONResponse:
+    """List available sectors the scanner can sweep."""
+    return JSONResponse(content={"sectors": SECTOR_NAMES})
+
+
+@app.get("/api/scan")
+def scan(
+    sector: str = Query("", description="Hebrew sector name, empty = whole market"),
+    top: int = Query(12, ge=1, le=40),
+    period: str = Query("6mo"),
+) -> JSONResponse:
+    """Scanner: the agent battery sweeps the market and surfaces opportunities."""
+    settings.history_period = period
+    sec = sector if sector in SECTOR_NAMES else None
+    return JSONResponse(content=scan_market(_committee, sector=sec, top=top))
 
 
 @app.get("/api/analyze")
